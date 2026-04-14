@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simons Engine — Quantitative Trading</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #06080d;
+  --bg-secondary: #0a0e17;
+  --bg-card: #0d1220;
+  --bg-hover: #111827;
+  --border: #1a2235;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
+  --gold: #E8B931;
+  --gold-dim: #E8B93133;
+  --green: #22c55e;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --purple: #a78bfa;
+  --cyan: #06b6d4;
+  --orange: #f97316;
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg-primary); color:var(--text-primary); font-family:var(--font-sans); }
+.layout { display:flex; min-height:100vh; }
+
+/* Sidebar */
+.sidebar {
+  width:220px; background:var(--bg-secondary); border-right:1px solid var(--border);
+  padding:20px 0; flex-shrink:0; position:fixed; height:100vh; overflow-y:auto;
+}
+.sidebar-brand { padding:0 20px 24px; border-bottom:1px solid var(--border); margin-bottom:16px; }
+.sidebar-brand h1 { font-size:15px; font-weight:700; color:var(--gold); letter-spacing:0.5px; }
+.sidebar-brand p { font-size:10px; color:var(--text-muted); font-family:var(--font-mono); letter-spacing:2px; margin-top:4px; }
+.sidebar-section { padding:0 12px; margin-bottom:16px; }
+.sidebar-section-title { font-size:9px; color:var(--text-muted); letter-spacing:2px; text-transform:uppercase; padding:0 8px; margin-bottom:8px; font-family:var(--font-mono); }
+.nav-item {
+  display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px;
+  cursor:pointer; font-size:13px; color:var(--text-secondary); transition:all 0.15s;
+}
+.nav-item:hover { background:var(--bg-hover); color:var(--text-primary); }
+.nav-item.active { background:var(--gold-dim); color:var(--gold); }
+.nav-icon { width:18px; text-align:center; font-family:var(--font-mono); font-size:11px; }
+
+/* Main */
+.main { flex:1; margin-left:220px; }
+.topbar {
+  height:40px; background:var(--bg-secondary); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; padding:0 24px;
+  font-family:var(--font-mono); font-size:11px;
+}
+.topbar-badges { display:flex; gap:8px; align-items:center; }
+.badge {
+  padding:3px 10px; border-radius:4px; font-size:10px; font-weight:600;
+  font-family:var(--font-mono); letter-spacing:1px;
+}
+.badge-gold { background:var(--gold-dim); color:var(--gold); border:1px solid #E8B93155; }
+.badge-green { background:#22c55e1a; color:var(--green); border:1px solid #22c55e33; }
+.badge-blue { background:#3b82f61a; color:var(--blue); border:1px solid #3b82f633; }
+.badge-red { background:#ef44441a; color:var(--red); border:1px solid #ef444433; }
+.badge-purple { background:#a78bfa1a; color:var(--purple); border:1px solid #a78bfa33; }
+
+.scan-btn {
+  background:var(--gold); color:#000; border:none; padding:6px 16px; border-radius:6px;
+  font-family:var(--font-mono); font-size:11px; font-weight:700; cursor:pointer;
+  letter-spacing:1px;
+}
+.scan-btn:hover { opacity:0.85; }
+
+.content { padding:24px; }
+
+/* Cards */
+.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+.stat-card {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:16px 20px;
+}
+.stat-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:2px; font-family:var(--font-mono); }
+.stat-value { font-size:24px; font-weight:700; margin-top:4px; font-family:var(--font-mono); }
+
+/* Regime Panel */
+.regime-panel {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:24px;
+}
+.regime-title { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:2px; font-family:var(--font-mono); margin-bottom:12px; }
+.regime-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.regime-state {
+  background:var(--bg-secondary); border-radius:8px; padding:12px; text-align:center;
+  border:1px solid var(--border);
+}
+.regime-state.active { border-color:var(--gold); box-shadow:0 0 12px #E8B93122; }
+.regime-state-name { font-size:11px; font-weight:600; margin-bottom:4px; }
+.regime-state-prob { font-size:18px; font-weight:700; font-family:var(--font-mono); }
+.regime-state-meta { font-size:9px; color:var(--text-muted); font-family:var(--font-mono); margin-top:2px; }
+
+/* Signals */
+.signals-panel {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:24px;
+}
+.signal-card {
+  background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:14px;
+  margin-bottom:8px; display:flex; align-items:center; gap:14px;
+}
+.signal-ticker { font-size:15px; font-weight:700; font-family:var(--font-mono); min-width:60px; }
+.signal-dir { font-size:11px; font-weight:600; padding:2px 8px; border-radius:4px; font-family:var(--font-mono); }
+.signal-dir.long { background:#22c55e1a; color:var(--green); }
+.signal-dir.short { background:#ef44441a; color:var(--red); }
+.signal-dir.neutral { background:#94a3b81a; color:var(--text-secondary); }
+.signal-meta { flex:1; display:flex; gap:16px; font-size:11px; color:var(--text-secondary); font-family:var(--font-mono); }
+.signal-meta span { display:flex; flex-direction:column; }
+.signal-meta .label { font-size:8px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; }
+
+/* Positions */
+.positions-panel {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:24px;
+}
+.positions-table { width:100%; border-collapse:collapse; font-size:12px; }
+.positions-table th {
+  text-align:left; padding:8px 12px; font-size:9px; color:var(--text-muted);
+  text-transform:uppercase; letter-spacing:2px; font-family:var(--font-mono);
+  border-bottom:1px solid var(--border);
+}
+.positions-table td { padding:10px 12px; border-bottom:1px solid #ffffff08; font-family:var(--font-mono); }
+
+/* Trades */
+.trades-panel {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px;
+}
+
+/* Risk Panel */
+.risk-panel {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:24px;
+}
+.risk-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.risk-item { background:var(--bg-secondary); border-radius:8px; padding:12px; text-align:center; }
+.risk-item .label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-family:var(--font-mono); }
+.risk-item .value { font-size:18px; font-weight:700; font-family:var(--font-mono); margin-top:4px; }
+
+.section-content { display:none; }
+.section-content.active { display:block; }
+
+@media (max-width:900px) {
+  .sidebar { display:none; }
+  .main { margin-left:0; }
+  .stats-grid { grid-template-columns:repeat(2,1fr); }
+  .regime-grid { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Simons Engine</h1>
+      <p>QUANTITATIVE TRADING</p>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Engine</div>
+      <div class="nav-item active" onclick="showSection('overview')">
+        <span class="nav-icon">S</span> Overview
+      </div>
+      <div class="nav-item" onclick="showSection('signals')">
+        <span class="nav-icon">~</span> Signals
+      </div>
+      <div class="nav-item" onclick="showSection('positions')">
+        <span class="nav-icon">P</span> Positions
+      </div>
+      <div class="nav-item" onclick="showSection('trades')">
+        <span class="nav-icon">T</span> Trade History
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Analysis</div>
+      <div class="nav-item" onclick="showSection('regime')">
+        <span class="nav-icon">H</span> HMM Regime
+      </div>
+      <div class="nav-item" onclick="showSection('risk')">
+        <span class="nav-icon">K</span> Kelly Risk
+      </div>
+    </div>
+    <div class="sidebar-section" style="margin-top:auto; padding-top:20px; border-top:1px solid var(--border);">
+      <div style="padding:8px 12px; font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">
+        <div>No AI API</div>
+        <div style="color:var(--gold);">Pure Mathematics</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-badges">
+        <span class="badge badge-gold" id="badgeEngine">SIMONS ENGINE</span>
+        <span class="badge badge-blue" id="badgeRegime">REGIME: --</span>
+        <span class="badge badge-purple" id="badgeMethod">METHOD: HMM + STATARB + KELLY</span>
+        <span class="badge badge-green" id="badgeMarket">LOADING...</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span id="topTime" style="color:var(--text-muted);">--</span>
+        <button class="scan-btn" onclick="runScan()">SCAN NOW</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- OVERVIEW -->
+      <div id="section-overview" class="section-content active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Portfolio Value</div>
+            <div class="stat-value" id="statEquity">$--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Available Cash</div>
+            <div class="stat-value" id="statCash">$--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Open Positions</div>
+            <div class="stat-value" id="statPositions">--</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Valid Signals</div>
+            <div class="stat-value" id="statSignals" style="color:var(--gold);">--</div>
+          </div>
+        </div>
+
+        <!-- Regime Summary -->
+        <div class="regime-panel">
+          <div class="regime-title">HMM Regime Detection (Baum-Welch)</div>
+          <div class="regime-grid" id="regimeGrid">
+            <div class="regime-state"><div class="regime-state-name">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- Top Signals -->
+        <div class="signals-panel">
+          <div class="regime-title">Statistical Arbitrage Signals (p &lt; 0.05)</div>
+          <div id="signalsList">
+            <div style="color:var(--text-muted);font-size:12px;padding:20px;text-align:center;">Tarama bekleniyor...</div>
+          </div>
+        </div>
+
+        <!-- Positions -->
+        <div class="positions-panel">
+          <div class="regime-title">Active Positions</div>
+          <table class="positions-table">
+            <thead>
+              <tr><th>Ticker</th><th>Side</th><th>Qty</th><th>Entry</th><th>Current</th><th>P&L</th><th>P&L %</th></tr>
+            </thead>
+            <tbody id="positionsBody">
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No positions</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SIGNALS -->
+      <div id="section-signals" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">All Generated Signals</div>
+          <div id="allSignalsList"></div>
+        </div>
+      </div>
+
+      <!-- POSITIONS -->
+      <div id="section-positions" class="section-content">
+        <div class="positions-panel">
+          <div class="regime-title">Portfolio Positions</div>
+          <table class="positions-table">
+            <thead>
+              <tr><th>Ticker</th><th>Side</th><th>Qty</th><th>Entry</th><th>Current</th><th>Market Value</th><th>P&L</th><th>P&L %</th></tr>
+            </thead>
+            <tbody id="fullPositionsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TRADES -->
+      <div id="section-trades" class="section-content">
+        <div class="trades-panel">
+          <div class="regime-title">Trade History</div>
+          <table class="positions-table">
+            <thead>
+              <tr><th>Time</th><th>Ticker</th><th>Side</th><th>Qty</th><th>Price</th><th>Signal</th><th>p-value</th><th>Kelly f</th><th>Regime</th></tr>
+            </thead>
+            <tbody id="tradesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- REGIME -->
+      <div id="section-regime" class="section-content">
+        <div class="regime-panel">
+          <div class="regime-title">Hidden Markov Model — Regime Analysis</div>
+          <div id="regimeDetail" style="color:var(--text-secondary);font-size:12px;">Loading...</div>
+        </div>
+      </div>
+
+      <!-- RISK -->
+      <div id="section-risk" class="section-content">
+        <div class="risk-panel">
+          <div class="regime-title">Kelly Criterion Risk Engine</div>
+          <div class="risk-grid" id="riskGrid"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ─── Navigation ───────────────────────────────
+function showSection(id) {
+  document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('section-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ─── Data Loading ─────────────────────────────
+async function loadData() {
+  try {
+    const [scanRes, accRes, tradesRes] = await Promise.all([
+      fetch('/api/scan').then(r => r.json()),
+      fetch('/api/account').then(r => r.json()),
+      fetch('/api/trades').then(r => r.json()),
+    ]);
+    updateDashboard(scanRes, accRes, tradesRes);
+  } catch(e) { console.error('Load error:', e); }
+}
+
+function updateDashboard(scan, account, trades) {
+  // Time
+  const now = new Date();
+  document.getElementById('topTime').textContent = now.toISOString().slice(0,16).replace('T',' ');
+
+  // Stats
+  const equity = account.equity || 0;
+  const cash = account.cash || 0;
+  const nPos = (account.positions || []).length;
+  const nSignals = scan.valid_signal_count || 0;
+
+  document.getElementById('statEquity').textContent = '$' + Number(equity).toLocaleString('en-US', {minimumFractionDigits:2});
+  document.getElementById('statCash').textContent = '$' + Number(cash).toLocaleString('en-US', {minimumFractionDigits:2});
+  document.getElementById('statPositions').textContent = nPos;
+  document.getElementById('statSignals').textContent = nSignals;
+
+  // Badges
+  const regime = scan.regime?.regime || 'unknown';
+  document.getElementById('badgeRegime').textContent = 'REGIME: ' + regime.toUpperCase();
+  document.getElementById('badgeMarket').textContent = scan.market_open ? 'MARKET OPEN' : 'AFTER HOURS';
+  document.getElementById('badgeMarket').className = 'badge ' + (scan.market_open ? 'badge-green' : 'badge-red');
+
+  // Regime Grid
+  const probs = scan.regime?.state_probabilities || {};
+  let regimeHtml = '';
+  const regimeColors = { low_volatility:'var(--green)', normal:'var(--blue)', high_volatility:'var(--orange)', crisis:'var(--red)' };
+  for (const [state, prob] of Object.entries(probs)) {
+    const isActive = state === regime;
+    regimeHtml += '<div class="regime-state' + (isActive ? ' active' : '') + '">' +
+      '<div class="regime-state-name" style="color:' + (regimeColors[state]||'var(--text-secondary)') + '">' + state.replace('_',' ') + '</div>' +
+      '<div class="regime-state-prob" style="color:' + (isActive ? 'var(--gold)' : 'var(--text-secondary)') + '">' + (prob*100).toFixed(1) + '%</div>' +
+      '</div>';
+  }
+  if (regimeHtml) document.getElementById('regimeGrid').innerHTML = regimeHtml;
+
+  // Signals
+  const signals = scan.signals || [];
+  let sigHtml = '';
+  for (const s of signals.slice(0, 10)) {
+    const dirClass = s.side === 'long' ? 'long' : s.side === 'short' ? 'short' : 'neutral';
+    sigHtml += '<div class="signal-card">' +
+      '<div class="signal-ticker">' + s.ticker + '</div>' +
+      '<div class="signal-dir ' + dirClass + '">' + s.side.toUpperCase() + '</div>' +
+      '<div class="signal-meta">' +
+        '<span><span class="label">Conviction</span>' + (s.conviction*100).toFixed(1) + '%</span>' +
+        '<span><span class="label">p-value</span>' + s.p_value.toFixed(4) + '</span>' +
+        '<span><span class="label">Alpha Est.</span>' + (s.alpha_estimate*100).toFixed(3) + '%</span>' +
+        '<span><span class="label">Signal</span>' + s.signal_name + '</span>' +
+        '<span><span class="label">Valid</span><span style="color:' + (s.valid ? 'var(--green)' : 'var(--red)') + '">' + (s.valid ? 'YES' : 'NO') + '</span></span>' +
+      '</div></div>';
+  }
+  document.getElementById('signalsList').innerHTML = sigHtml || '<div style="color:var(--text-muted);padding:20px;text-align:center;">Sinyal yok</div>';
+  document.getElementById('allSignalsList').innerHTML = sigHtml || '<div style="color:var(--text-muted);padding:20px;text-align:center;">Sinyal yok</div>';
+
+  // Positions
+  const positions = account.positions || [];
+  let posHtml = '';
+  for (const p of positions) {
+    const plColor = p.unrealized_pl >= 0 ? 'var(--green)' : 'var(--red)';
+    posHtml += '<tr>' +
+      '<td style="font-weight:600">' + p.ticker + '</td>' +
+      '<td>' + (p.side || 'long') + '</td>' +
+      '<td>' + p.qty + '</td>' +
+      '<td>$' + Number(p.avg_entry).toFixed(2) + '</td>' +
+      '<td>$' + Number(p.current_price).toFixed(2) + '</td>' +
+      '<td style="color:' + plColor + '">$' + Number(p.unrealized_pl).toFixed(2) + '</td>' +
+      '<td style="color:' + plColor + '">' + p.unrealized_plpc + '%</td>' +
+      '</tr>';
+  }
+  document.getElementById('positionsBody').innerHTML = posHtml || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No positions</td></tr>';
+  document.getElementById('fullPositionsBody').innerHTML = posHtml.replace(/<\/tr>/g, function() {
+    return '</tr>';
+  }) || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No positions</td></tr>';
+
+  // Trades
+  let trHtml = '';
+  for (const t of (trades || []).slice(0, 30)) {
+    trHtml += '<tr>' +
+      '<td>' + (t.timestamp || '').slice(0,16) + '</td>' +
+      '<td style="font-weight:600">' + t.ticker + '</td>' +
+      '<td style="color:' + (t.side==='buy'?'var(--green)':'var(--red)') + '">' + t.side.toUpperCase() + '</td>' +
+      '<td>' + t.qty + '</td>' +
+      '<td>$' + Number(t.price).toFixed(2) + '</td>' +
+      '<td>' + (t.signal_name||'--') + '</td>' +
+      '<td>' + (t.signal_p_value ? Number(t.signal_p_value).toFixed(4) : '--') + '</td>' +
+      '<td>' + (t.kelly_f ? Number(t.kelly_f).toFixed(3) : '--') + '</td>' +
+      '<td>' + (t.regime||'--') + '</td>' +
+      '</tr>';
+  }
+  document.getElementById('tradesBody').innerHTML = trHtml || '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No trades yet</td></tr>';
+
+  // Regime Detail
+  const rInfo = scan.regime || {};
+  document.getElementById('regimeDetail').innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">' +
+    '<div><b>Current Regime:</b> ' + (rInfo.regime||'--') + '</div>' +
+    '<div><b>Risk Multiplier:</b> ' + (rInfo.risk_multiplier||'--') + 'x</div>' +
+    '<div><b>States Detected:</b> ' + (rInfo.n_states||'--') + '</div>' +
+    '<div><b>Regime Change Prob:</b> ' + ((rInfo.regime_change_probability||0)*100).toFixed(1) + '%</div>' +
+    '<div><b>BIC Score:</b> ' + (rInfo.bic||'--') + '</div>' +
+    '<div><b>Method:</b> ' + (rInfo.method||'Gaussian HMM') + '</div>' +
+    '</div>' +
+    (rInfo.state_means ? '<div style="margin-top:16px;"><b>Annualized State Returns:</b> ' + rInfo.state_means.map(function(m,i){ return 'S'+i+': '+(m*100).toFixed(1)+'%'; }).join(' | ') + '</div>' : '') +
+    (rInfo.state_volatilities ? '<div style="margin-top:8px;"><b>State Volatilities:</b> ' + rInfo.state_volatilities.map(function(v,i){ return 'S'+i+': '+(v*100).toFixed(1)+'%'; }).join(' | ') + '</div>' : '');
+}
+
+async function runScan() {
+  document.querySelector('.scan-btn').textContent = 'SCANNING...';
+  try {
+    const res = await fetch('/api/scan-now', {method:'POST'});
+    const data = await res.json();
+    await loadData();
+  } catch(e) { console.error(e); }
+  document.querySelector('.scan-btn').textContent = 'SCAN NOW';
+}
+
+async function loadRisk() {
+  try {
+    const data = await fetch('/api/risk-status').then(r => r.json());
+    const grid = document.getElementById('riskGrid');
+    grid.innerHTML =
+      '<div class="risk-item"><div class="label">Kelly Fraction</div><div class="value">' + (data.kelly_fraction||0.5) + 'x</div></div>' +
+      '<div class="risk-item"><div class="label">Peak Equity</div><div class="value">$' + Number(data.peak_equity||0).toLocaleString() + '</div></div>' +
+      '<div class="risk-item"><div class="label">Drawdown</div><div class="value" style="color:' + (data.current_drawdown_pct > 5 ? 'var(--red)' : 'var(--green)') + '">' + (data.current_drawdown_pct||0).toFixed(2) + '%</div></div>' +
+      '<div class="risk-item"><div class="label">Risk Multiplier</div><div class="value">' + (data.risk_multiplier||1) + 'x</div></div>' +
+      '<div class="risk-item"><div class="label">Circuit Breaker</div><div class="value" style="color:' + (data.circuit_breaker_active ? 'var(--red)' : 'var(--green)') + '">' + (data.circuit_breaker_active ? 'ACTIVE' : 'OK') + '</div></div>' +
+      '<div class="risk-item"><div class="label">Max Position</div><div class="value">' + (data.max_position_pct||5) + '%</div></div>';
+  } catch(e) {}
+}
+
+// Auto refresh
+loadData();
+loadRisk();
+setInterval(loadData, 30000);
+setInterval(loadRisk, 60000);
+</script>
+</body>
+</html>
