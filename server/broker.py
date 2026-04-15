@@ -15,9 +15,13 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockSnapshotRequest
 from alpaca.data.timeframe import TimeFrame
 
-_env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(_env_path)
-_env_vals = dotenv_values(_env_path)
+# .env yolunu guvenlice bul (hem server/ icinden hem disaridan calisir)
+_this_dir = Path(__file__).resolve().parent  # server/
+_env_path = _this_dir.parent / ".env"
+if not _env_path.exists():
+    _env_path = _this_dir / ".env"  # fallback
+load_dotenv(_env_path, override=True)
+_env_vals = dotenv_values(_env_path) if _env_path.exists() else {}
 
 def _get(key): return os.getenv(key) or _env_vals.get(key, "")
 
@@ -135,13 +139,22 @@ class SimonsBroker:
             limit=limit,
         )
         bars = self.data_client.get_stock_bars(req)
-        return bars[ticker] if ticker in bars else []
+        # alpaca-py v0.30+: BarSet obje, .data dict veya dogrudan dict access
+        if hasattr(bars, 'data') and isinstance(bars.data, dict):
+            return bars.data.get(ticker, [])
+        elif hasattr(bars, '__getitem__'):
+            try:
+                return bars[ticker]
+            except (KeyError, TypeError):
+                return []
+        return []
 
     def get_snapshot(self, ticker: str) -> dict:
         """Anlık fiyat verisi."""
         try:
             req = StockSnapshotRequest(symbol_or_symbols=ticker)
-            snap = self.data_client.get_stock_snapshot(req)
+            snap_raw = self.data_client.get_stock_snapshot(req)
+            snap = snap_raw.data if hasattr(snap_raw, 'data') and isinstance(snap_raw.data, dict) else snap_raw
             if ticker in snap:
                 s = snap[ticker]
                 return {

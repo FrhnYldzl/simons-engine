@@ -8,22 +8,22 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg-primary: #06080d;
-  --bg-secondary: #0a0e17;
-  --bg-card: #0d1220;
-  --bg-hover: #111827;
-  --border: #1a2235;
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  --gold: #E8B931;
-  --gold-dim: #E8B93133;
-  --green: #22c55e;
-  --red: #ef4444;
-  --blue: #3b82f6;
-  --purple: #a78bfa;
-  --cyan: #06b6d4;
-  --orange: #f97316;
+  --bg-primary: #f8f9fb;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --gold: #b8860b;
+  --gold-dim: #b8860b14;
+  --green: #16a34a;
+  --red: #dc2626;
+  --blue: #2563eb;
+  --purple: #7c3aed;
+  --cyan: #0891b2;
+  --orange: #ea580c;
   --font-sans: 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
@@ -61,14 +61,14 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
   padding:3px 10px; border-radius:4px; font-size:10px; font-weight:600;
   font-family:var(--font-mono); letter-spacing:1px;
 }
-.badge-gold { background:var(--gold-dim); color:var(--gold); border:1px solid #E8B93155; }
-.badge-green { background:#22c55e1a; color:var(--green); border:1px solid #22c55e33; }
-.badge-blue { background:#3b82f61a; color:var(--blue); border:1px solid #3b82f633; }
-.badge-red { background:#ef44441a; color:var(--red); border:1px solid #ef444433; }
-.badge-purple { background:#a78bfa1a; color:var(--purple); border:1px solid #a78bfa33; }
+.badge-gold { background:#fef3c7; color:var(--gold); border:1px solid #d4a50a44; }
+.badge-green { background:#dcfce7; color:var(--green); border:1px solid #16a34a44; }
+.badge-blue { background:#dbeafe; color:var(--blue); border:1px solid #2563eb44; }
+.badge-red { background:#fee2e2; color:var(--red); border:1px solid #dc262644; }
+.badge-purple { background:#ede9fe; color:var(--purple); border:1px solid #7c3aed44; }
 
 .scan-btn {
-  background:var(--gold); color:#000; border:none; padding:6px 16px; border-radius:6px;
+  background:var(--gold); color:#fff; border:none; padding:6px 16px; border-radius:6px;
   font-family:var(--font-mono); font-size:11px; font-weight:700; cursor:pointer;
   letter-spacing:1px;
 }
@@ -80,6 +80,7 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
 .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
 .stat-card {
   background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:16px 20px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.06);
 }
 .stat-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:2px; font-family:var(--font-mono); }
 .stat-value { font-size:24px; font-weight:700; margin-top:4px; font-family:var(--font-mono); }
@@ -94,7 +95,7 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
   background:var(--bg-secondary); border-radius:8px; padding:12px; text-align:center;
   border:1px solid var(--border);
 }
-.regime-state.active { border-color:var(--gold); box-shadow:0 0 12px #E8B93122; }
+.regime-state.active { border-color:var(--gold); box-shadow:0 0 12px #b8860b22; background:#fef9ee; }
 .regime-state-name { font-size:11px; font-weight:600; margin-bottom:4px; }
 .regime-state-prob { font-size:18px; font-weight:700; font-family:var(--font-mono); }
 .regime-state-meta { font-size:9px; color:var(--text-muted); font-family:var(--font-mono); margin-top:2px; }
@@ -109,9 +110,9 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
 }
 .signal-ticker { font-size:15px; font-weight:700; font-family:var(--font-mono); min-width:60px; }
 .signal-dir { font-size:11px; font-weight:600; padding:2px 8px; border-radius:4px; font-family:var(--font-mono); }
-.signal-dir.long { background:#22c55e1a; color:var(--green); }
-.signal-dir.short { background:#ef44441a; color:var(--red); }
-.signal-dir.neutral { background:#94a3b81a; color:var(--text-secondary); }
+.signal-dir.long { background:#dcfce7; color:var(--green); }
+.signal-dir.short { background:#fee2e2; color:var(--red); }
+.signal-dir.neutral { background:#f1f5f9; color:var(--text-secondary); }
 .signal-meta { flex:1; display:flex; gap:16px; font-size:11px; color:var(--text-secondary); font-family:var(--font-mono); }
 .signal-meta span { display:flex; flex-direction:column; }
 .signal-meta .label { font-size:8px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; }
@@ -126,7 +127,7 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
   text-transform:uppercase; letter-spacing:2px; font-family:var(--font-mono);
   border-bottom:1px solid var(--border);
 }
-.positions-table td { padding:10px 12px; border-bottom:1px solid #ffffff08; font-family:var(--font-mono); }
+.positions-table td { padding:10px 12px; border-bottom:1px solid var(--border); font-family:var(--font-mono); }
 
 /* Trades */
 .trades-panel {
