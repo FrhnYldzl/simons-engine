@@ -466,12 +466,18 @@ async def lifespan(app: FastAPI):
 
     init_broker()
 
-    # Ilk scan
+    # Server HEMEN ayaga kalksin, scan arka planda calissin
     if broker:
-        print("[Simons] Ilk tarama baslatiliyor...")
-        run_scan(auto_execute=False)
-        # Scheduler baslat
         start_scheduler()
+        # Ilk scan 15 saniye sonra (Railway health check gecsin)
+        from apscheduler.triggers.date import DateTrigger
+        _scheduler.add_job(
+            func=lambda: run_scan(auto_execute=False),
+            trigger=DateTrigger(run_date=datetime.now(timezone.utc) + timedelta(seconds=15)),
+            id="simons_first_scan",
+            replace_existing=True,
+        )
+        print("[Simons] Ilk tarama 15sn sonra baslatilacak (startup hizlandirma)")
 
     print(f"[Simons] Server hazir! -> http://localhost:8000")
     yield

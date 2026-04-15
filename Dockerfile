@@ -24,5 +24,5 @@ EXPOSE 8080
 # Calisma dizini
 WORKDIR /app/server
 
-# Baslat — CMD exec form, shell degil
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Baslat — /bin/sh ile PORT env var okur
+CMD ["/bin/sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
