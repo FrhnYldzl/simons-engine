@@ -247,7 +247,7 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
 
         <!-- Top Signals -->
         <div class="signals-panel">
-          <div class="regime-title">Statistical Arbitrage Signals (p &lt; 0.05)</div>
+          <div class="regime-title">Statistical Arbitrage Signals (p &lt; 0.05, conv &ge; 0.3)</div>
           <div id="signalsList">
             <div style="color:var(--text-muted);font-size:12px;padding:20px;text-align:center;">Tarama bekleniyor...</div>
           </div>
@@ -264,6 +264,18 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
               <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No positions</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Exits Panel -->
+        <div class="signals-panel" id="exitsPanel" style="display:none;">
+          <div class="regime-title" style="color:var(--orange);">Exit Actions (Last Scan)</div>
+          <div id="exitsList"></div>
+        </div>
+
+        <!-- Rejected Signals Panel -->
+        <div class="signals-panel" id="rejectsPanel" style="display:none;">
+          <div class="regime-title">Rejected Signals (Why Not Traded)</div>
+          <div id="rejectsList"></div>
         </div>
       </div>
 
@@ -542,6 +554,45 @@ function updateDashboard(scan, account, trades) {
   document.getElementById('fullPositionsBody').innerHTML = posHtml.replace(/<\/tr>/g, function() {
     return '</tr>';
   }) || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No positions</td></tr>';
+
+  // Exits (last scan)
+  const exits = scan.exits_executed || [];
+  const exitsPanel = document.getElementById('exitsPanel');
+  if (exits.length > 0) {
+    let exitsHtml = '';
+    for (const e of exits) {
+      const plColor = (e.pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+      exitsHtml += '<div class="signal-card">' +
+        '<div class="signal-ticker">' + e.ticker + '</div>' +
+        '<div class="signal-dir" style="background:#fef3c7;color:var(--orange);">CLOSED</div>' +
+        '<div class="signal-meta">' +
+          '<span><span class="label">Reason</span>' + (e.reason || '--') + '</span>' +
+          '<span><span class="label">PnL</span><span style="color:' + plColor + '">$' + Number(e.pnl||0).toFixed(2) + '</span></span>' +
+          '<span><span class="label">PnL %</span><span style="color:' + plColor + '">' + Number(e.pnl_pct||0).toFixed(2) + '%</span></span>' +
+        '</div></div>';
+    }
+    document.getElementById('exitsList').innerHTML = exitsHtml;
+    exitsPanel.style.display = 'block';
+  } else {
+    exitsPanel.style.display = 'none';
+  }
+
+  // Rejects
+  const rejects = scan.rejects || [];
+  const rejectsPanel = document.getElementById('rejectsPanel');
+  if (rejects.length > 0) {
+    let rejHtml = '';
+    for (const r of rejects.slice(0, 12)) {
+      rejHtml += '<div class="signal-card" style="padding:8px 14px;">' +
+        '<div class="signal-ticker" style="min-width:60px;">' + r.ticker + '</div>' +
+        '<div style="flex:1;font-size:11px;color:var(--text-secondary);font-family:var(--font-mono);">' + r.reason + '</div>' +
+        '</div>';
+    }
+    document.getElementById('rejectsList').innerHTML = rejHtml;
+    rejectsPanel.style.display = 'block';
+  } else {
+    rejectsPanel.style.display = 'none';
+  }
 
   // Trades
   let trHtml = '';
