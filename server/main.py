@@ -28,19 +28,30 @@ load_dotenv(_env_path)
 
 # ─── Broker ───────────────────────────────────────────
 broker = None
-try:
-    broker = SimonsBroker()
-    acc = broker.get_account()
-    print(f"[Simons] Broker bağlandı — Equity: ${acc['equity']:,.2f}")
-except Exception as e:
-    print(f"[Simons] Broker hatası: {e}")
+
+
+def init_broker():
+    global broker
+    try:
+        broker = SimonsBroker()
+        acc = broker.get_account()
+        print(f"[Simons] Broker baglandi — Equity: ${acc['equity']:,.2f}")
+    except Exception as e:
+        print(f"[Simons] Broker hatasi (devam ediliyor): {e}")
+        broker = None
 
 
 # ─── Lifespan ─────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("[Simons] Server baslatiliyor...")
     init_db()
-    sched.start(broker=broker, auto_execute=True, interval_minutes=10)
+    init_broker()
+    if broker:
+        sched.start(broker=broker, auto_execute=True, interval_minutes=10)
+    else:
+        print("[Simons] Broker yok — scheduler baslatilmadi")
+    print("[Simons] Server hazir!")
     yield
     sched.stop()
 
@@ -66,12 +77,15 @@ async def dashboard():
 @app.get("/api/health")
 async def health():
     last_scan = sched.get_last_scan()
+    regime_data = last_scan.get("regime", {})
+    regime = regime_data.get("regime", "unknown") if isinstance(regime_data, dict) else str(regime_data)
     return {
         "status": "ok",
-        "version": "1.0",
+        "version": "1.0.3",
         "engine": "Simons Quantitative",
         "ai_api_used": False,
-        "regime": last_scan.get("regime", {}).get("regime", "unknown"),
+        "broker_connected": broker is not None,
+        "regime": regime,
         "market_open": last_scan.get("market_open", False),
         "last_scan": last_scan.get("timestamp"),
     }
