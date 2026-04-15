@@ -23,8 +23,14 @@ Refs:
 import numpy as np
 import pandas as pd
 from scipy import stats
-from statsmodels.tsa.stattools import adfuller
 from typing import Optional
+
+try:
+    from statsmodels.tsa.stattools import adfuller
+    STATSMODELS_AVAILABLE = True
+except ImportError:
+    STATSMODELS_AVAILABLE = False
+    print("[Signal] statsmodels yuklu degil — ADF test devre disi")
 
 
 class Signal:
@@ -152,8 +158,12 @@ class SignalEngine:
             z_score = (current - mean) / std
 
             # ADF test — mean reversion var mı?
-            adf_result = adfuller(close[-window:], maxlag=10)
-            p_value = adf_result[1]
+            if STATSMODELS_AVAILABLE:
+                adf_result = adfuller(close[-window:], maxlag=10)
+                p_value = adf_result[1]
+            else:
+                # Fallback: z-score bazlı p-value
+                p_value = 2 * (1 - stats.norm.cdf(abs(z_score)))
 
             # Half-life hesaplama
             spread = close[-window:] - rolling_mean[-window:]

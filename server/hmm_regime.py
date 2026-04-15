@@ -19,8 +19,14 @@ Refs:
 import numpy as np
 import pandas as pd
 from typing import Optional
-from hmmlearn.hmm import GaussianHMM
 from scipy import stats
+
+try:
+    from hmmlearn.hmm import GaussianHMM
+    HMM_AVAILABLE = True
+except ImportError:
+    HMM_AVAILABLE = False
+    print("[HMM] hmmlearn yuklu degil — fallback mode")
 
 
 # Regime labels (sıralı: düşük vol → yüksek vol)
@@ -85,6 +91,9 @@ class HMMRegimeDetector:
             returns,
             np.abs(returns),  # Volatility proxy
         ])
+
+        if not HMM_AVAILABLE:
+            return self._fallback_regime(returns)
 
         # Optimal state sayısı BIC ile
         best_model = None

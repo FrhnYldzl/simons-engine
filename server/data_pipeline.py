@@ -194,9 +194,12 @@ def get_covariance_matrix(returns_matrix: pd.DataFrame, method: str = "ledoit_wo
         return np.array([])
 
     if method == "ledoit_wolf":
-        from sklearn.covariance import LedoitWolf
-        lw = LedoitWolf().fit(returns_matrix.dropna())
-        return lw.covariance_
+        try:
+            from sklearn.covariance import LedoitWolf
+            lw = LedoitWolf().fit(returns_matrix.dropna())
+            return lw.covariance_
+        except ImportError:
+            return returns_matrix.cov().values
 
     elif method == "ewma":
         # RiskMetrics EWMA (lambda=0.94)
