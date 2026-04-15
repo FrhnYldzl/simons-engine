@@ -186,6 +186,12 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
         <span class="nav-icon">K</span> Kelly Risk
       </div>
     </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Info</div>
+      <div class="nav-item" onclick="showSection('about')">
+        <span class="nav-icon">i</span> About
+      </div>
+    </div>
     <div class="sidebar-section" style="margin-top:auto; padding-top:20px; border-top:1px solid var(--border);">
       <div style="padding:8px 12px; font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">
         <div>No AI API</div>
@@ -308,6 +314,134 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
         <div class="risk-panel">
           <div class="regime-title">Kelly Criterion Risk Engine</div>
           <div class="risk-grid" id="riskGrid"></div>
+        </div>
+      </div>
+
+      <!-- ABOUT -->
+      <div id="section-about" class="section-content">
+        <div style="max-width:800px;">
+          <!-- Hero -->
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:32px;margin-bottom:24px;display:flex;gap:28px;align-items:center;">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Jim_Simons_at_Induction.jpg/440px-Jim_Simons_at_Induction.jpg"
+                 alt="Jim Simons" style="width:140px;height:140px;border-radius:12px;object-fit:cover;border:3px solid var(--gold);flex-shrink:0;">
+            <div>
+              <h2 style="font-size:22px;font-weight:700;margin-bottom:4px;">Jim Simons</h2>
+              <p style="font-size:13px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:10px;">1938 - 2024 &middot; Mathematician &middot; Codebreaker &middot; Investor</p>
+              <p style="font-size:14px;color:var(--text-secondary);line-height:1.6;">
+                The man who solved the market. MIT'den 20 yasinda mezun, 23 yasinda Berkeley'den doktora, NSA'da sifre kirici,
+                Stony Brook'ta matematik profesoru ve Renaissance Technologies'in kurucusu.
+                Medallion Fund ile tarihin en basarili yatirim fonunu yaratti.
+              </p>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+              <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);">Avg Annual Return</div>
+              <div style="font-size:26px;font-weight:700;color:var(--green);font-family:var(--font-mono);margin-top:4px;">66.1%</div>
+              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">gross (1988-2018)</div>
+            </div>
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+              <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);">Total Profits</div>
+              <div style="font-size:26px;font-weight:700;color:var(--gold);font-family:var(--font-mono);margin-top:4px;">$100B+</div>
+              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">since 1988</div>
+            </div>
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+              <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);">Best Year</div>
+              <div style="font-size:26px;font-weight:700;color:var(--blue);font-family:var(--font-mono);margin-top:4px;">98.2%</div>
+              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">2008 (S&P: -38%)</div>
+            </div>
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+              <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);">Net Worth</div>
+              <div style="font-size:26px;font-weight:700;color:var(--purple);font-family:var(--font-mono);margin-top:4px;">$31.4B</div>
+              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">at time of death</div>
+            </div>
+          </div>
+
+          <!-- Key People -->
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);margin-bottom:14px;">Key People & Their Contributions</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div style="background:var(--bg-hover);border-radius:8px;padding:14px;">
+                <div style="font-weight:600;font-size:13px;">Leonard Baum</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">HMM algoritmasinin mucidi. NSA'da sifre kirma icin gelistirdigi Baum-Welch algoritmasini finansal piyasalara uyarladi.</div>
+              </div>
+              <div style="background:var(--bg-hover);border-radius:8px;padding:14px;">
+                <div style="font-weight:600;font-size:13px;">Elwyn Berlekamp</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Kelly Criterion uzmani. Shannon'in ogrencisi. 1990'da Medallion'u yeniden tasarladi -- sonuc: %77.8 brut getiri.</div>
+              </div>
+              <div style="background:var(--bg-hover);border-radius:8px;padding:14px;">
+                <div style="font-weight:600;font-size:13px;">Henry Laufer</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">24-saat etkisini kesfetti. Overnight vs intraday return decomposition. Kisa vadeli momentum sinyallerinin mimari.</div>
+              </div>
+              <div style="background:var(--bg-hover);border-radius:8px;padding:14px;">
+                <div style="font-weight:600;font-size:13px;">Robert Mercer & Peter Brown</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">IBM'den gelen NLP uzmanlari. Makinelerin dil ogrendigi gibi piyasayi ogretme yaklasimi. Co-CEO'lar.</div>
+              </div>
+              <div style="background:var(--bg-hover);border-radius:8px;padding:14px;">
+                <div style="font-weight:600;font-size:13px;">Sandor Straus</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Veri toplama ve temizleme altyapisinin mimari. Renaissance'in en temel rekabet avantaji: temiz veri.</div>
+              </div>
+              <div style="background:var(--bg-hover);border-radius:8px;padding:14px;">
+                <div style="font-weight:600;font-size:13px;">Nick Patterson</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">NSA'dan gelen kriptograf. Istatistiksel sinyal tespiti. "Basit seyleri dogru yapmak icin en zeki insanlara ihtiyaciniz var."</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- What This Engine Uses -->
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);margin-bottom:14px;">What This Engine Uses From Medallion</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+              <div style="border-left:3px solid var(--green);padding:12px 14px;background:var(--bg-hover);border-radius:0 8px 8px 0;">
+                <div style="font-weight:600;font-size:12px;color:var(--green);">FP-01: Data Pipeline</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Straus'un veri temizleme mirasi. Outlier detection, Z-score winsorization, volume normalization.</div>
+              </div>
+              <div style="border-left:3px solid var(--blue);padding:12px 14px;background:var(--bg-hover);border-radius:0 8px 8px 0;">
+                <div style="font-weight:600;font-size:12px;color:var(--blue);">FP-02: HMM Regime</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Baum'un Hidden Markov Model'i. 4 rejim tespiti, Gaussian HMM, BIC model secimi.</div>
+              </div>
+              <div style="border-left:3px solid var(--purple);padding:12px 14px;background:var(--bg-hover);border-radius:0 8px 8px 0;">
+                <div style="font-weight:600;font-size:12px;color:var(--purple);">FP-03: Signal Engine</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Mean Reversion (O-U), Momentum (Laufer), Volume Anomaly, Overnight Gap. p-value filtresi.</div>
+              </div>
+              <div style="border-left:3px solid var(--orange);padding:12px 14px;background:var(--bg-hover);border-radius:0 8px 8px 0;">
+                <div style="font-weight:600;font-size:12px;color:var(--orange);">FP-05: Kelly Criterion</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Berlekamp'in pozisyon boyutlandirmasi. Half-Kelly, circuit breakers, ATR stop-loss.</div>
+              </div>
+              <div style="border-left:3px solid var(--cyan);padding:12px 14px;background:var(--bg-hover);border-radius:0 8px 8px 0;">
+                <div style="font-weight:600;font-size:12px;color:var(--cyan);">Autonomous Loop</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Her 10 dakikada otonom tarama. AI API kullanmadan, saf matematik ile karar verme.</div>
+              </div>
+              <div style="border-left:3px solid var(--red);padding:12px 14px;background:var(--bg-hover);border-radius:0 8px 8px 0;">
+                <div style="font-weight:600;font-size:12px;color:var(--red);">Risk Management</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Drawdown circuit breakers (-5%, -10%, -15%). Max %5 pozisyon, %2/gun portfoy riski.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quote -->
+          <div style="background:linear-gradient(135deg,#fef9ee,#fef3c7);border:1px solid #d4a50a33;border-radius:14px;padding:28px;text-align:center;margin-bottom:24px;">
+            <div style="font-size:16px;font-style:italic;color:var(--text-primary);line-height:1.6;max-width:600px;margin:0 auto;">
+              "We're right 50.75% of the time, but we're 100% right 50.75% of the time. You can make billions that way."
+            </div>
+            <div style="font-size:12px;color:var(--gold);font-weight:600;margin-top:12px;font-family:var(--font-mono);">-- Robert Mercer, Renaissance Technologies</div>
+          </div>
+
+          <!-- Links -->
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);margin-bottom:12px;">Further Reading</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <a href="https://quartr.com/insights/investment-strategy/jim-simons-the-man-who-solved-the-market" target="_blank" style="color:var(--blue);font-size:13px;text-decoration:none;">Quartr: Jim Simons -- The Man Who Solved the Market</a>
+              <a href="https://www.investopedia.com/articles/investing/030516/jim-simons-success-story-net-worth-education-top-quotes.asp" target="_blank" style="color:var(--blue);font-size:13px;text-decoration:none;">Investopedia: Jim Simons Success Story & Top Quotes</a>
+              <a href="https://en.wikipedia.org/wiki/Renaissance_Technologies" target="_blank" style="color:var(--blue);font-size:13px;text-decoration:none;">Wikipedia: Renaissance Technologies</a>
+              <a href="https://en.wikipedia.org/wiki/Jim_Simons" target="_blank" style="color:var(--blue);font-size:13px;text-decoration:none;">Wikipedia: Jim Simons (1938-2024)</a>
+            </div>
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);">
+              <strong>Book:</strong> Gregory Zuckerman (2019). <em>The Man Who Solved the Market: How Jim Simons Launched the Quant Revolution.</em>
+            </div>
+          </div>
         </div>
       </div>
     </div>
