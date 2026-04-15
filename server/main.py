@@ -425,3 +425,50 @@ async def stats():
             "scan_count": _scan_count, "universe": len(UNIVERSE),
             "cached": len(_cached_data),
             "scheduler": _scheduler.running if _scheduler else False}
+
+
+@app.get("/api/debug")
+async def debug():
+    """Broker baglanti sorunlarini teshis icin."""
+    key = os.getenv("ALPACA_API_KEY", "")
+    secret = os.getenv("ALPACA_SECRET_KEY", "")
+    base_url = os.getenv("ALPACA_BASE_URL", "")
+
+    # Canli broker testi
+    test_result = None
+    test_error = None
+    try:
+        from broker import SimonsBroker
+        test_broker = SimonsBroker()
+        acc = test_broker.get_account()
+        test_result = {
+            "connected": True,
+            "equity": acc.get("equity", 0),
+            "cash": acc.get("cash", 0),
+            "positions": len(test_broker.get_positions()),
+        }
+    except Exception as e:
+        test_error = f"{type(e).__name__}: {str(e)}"
+
+    return {
+        "env_vars": {
+            "ALPACA_API_KEY_set": bool(key),
+            "ALPACA_API_KEY_length": len(key),
+            "ALPACA_API_KEY_prefix": key[:6] if key else None,
+            "ALPACA_SECRET_KEY_set": bool(secret),
+            "ALPACA_SECRET_KEY_length": len(secret),
+            "ALPACA_SECRET_KEY_prefix": secret[:6] if secret else None,
+            "ALPACA_BASE_URL": base_url or "NOT SET",
+            "PORT": os.getenv("PORT", "NOT SET"),
+        },
+        "broker_state": {
+            "global_broker_is_none": broker is None,
+            "test_connect_success": test_result is not None,
+            "test_result": test_result,
+            "test_error": test_error,
+        },
+        "module_status": {
+            "db": DB_OK, "pipeline": PIPELINE_OK, "hmm": HMM_OK,
+            "signals": SIGNAL_OK, "kelly": KELLY_OK, "scheduler": SCHED_OK,
+        },
+    }
