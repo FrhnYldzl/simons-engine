@@ -9,6 +9,7 @@ HMM + StatArb + Kelly Criterion + Autonomous Execution
 Dashboard: http://localhost:8000
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,20 +27,37 @@ import scheduler as sched
 _env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(_env_path)
 
-# ─── Broker ───────────────────────────────────────────
+# ─── Broker (set in lifespan, not at import time) ─────
 broker = None
-try:
-    broker = SimonsBroker()
-    acc = broker.get_account()
-    print(f"[Simons] Broker bağlandı — Equity: ${acc['equity']:,.2f}")
-except Exception as e:
-    print(f"[Simons] Broker hatası: {e}")
+
+
+def _init_broker():
+    """Broker başlat — thread executor'da çalışır, event loop'u bloke etmez."""
+    b = SimonsBroker()
+    acc = b.get_account()
+    return b, acc
 
 
 # ─── Lifespan ─────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global broker
     init_db()
+
+    # Broker'ı async olarak başlat (10s timeout — event loop'u bloke etmez)
+    try:
+        loop = asyncio.get_running_loop()
+        b, acc = await asyncio.wait_for(
+            loop.run_in_executor(None, _init_broker),
+            timeout=10.0,
+        )
+        broker = b
+        print(f"[Simons] Broker bağlandı — Equity: ${acc['equity']:,.2f}")
+    except asyncio.TimeoutError:
+        print("[Simons] Broker bağlantısı timeout (10s) — demo mod aktif")
+    except Exception as e:
+        print(f"[Simons] Broker başlatılamadı (demo mod): {e}")
+
     sched.start(broker=broker, auto_execute=True, interval_minutes=10)
     yield
     sched.stop()
