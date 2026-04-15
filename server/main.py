@@ -94,16 +94,25 @@ UNIVERSE = [
     "MARA", "COIN", "NFLX", "SQ", "SHOP",
 ]
 
+# ─── Engine Configuration ─────────────────────────────
+# Trading kurallari (canliya gecmeden once sikilastirildi)
+P_VALUE_THRESHOLD = 0.05          # Medallion'a yakin sikilik (onceki 0.10)
+MIN_CONVICTION = 0.30             # Dusuk conviction sinyallerini reddet
+MIN_POSITION_VALUE = 500.0        # $500 altindaki pozisyonlari atla
+TICKER_COOLDOWN_HOURS = 24        # Ayni ticker'a 24 saat icinde 2. trade yasak
+SCAN_INTERVAL_MINUTES = 30        # Saatte 2 tarama (onceki 10dk cok agresif)
+MAX_DAILY_TRADES = 3              # PDT koruma + risk sinirlama
+EXIT_CHECK_ENABLED = True         # Acik pozisyonlari her scan'de kontrol et
+
 # ─── Engine State ─────────────────────────────────────
 broker = None
-_signal_engine = SignalEngine(p_threshold=0.10) if SIGNAL_OK else None
+_signal_engine = SignalEngine(p_threshold=P_VALUE_THRESHOLD) if SIGNAL_OK else None
 _kelly_engine = KellyEngine() if KELLY_OK else None
 _cached_data = {}
 _scheduler = BackgroundScheduler(timezone="UTC") if SCHED_OK else None
 _auto_execute = True
-SCAN_INTERVAL_MINUTES = 10
-MAX_DAILY_TRADES = 3
 _scan_count = 0
+_reject_log = []  # Son scan'de reddedilen sinyaller (debug icin)
 
 _last_scan = {
     "status": "waiting",
@@ -158,6 +167,127 @@ def _is_market_open():
     mo = now.replace(hour=13, minute=30, second=0, microsecond=0)
     mc = now.replace(hour=20, minute=0, second=0, microsecond=0)
     return mo <= now <= mc
+
+
+def _get_recent_trade_tickers(hours: int = 24) -> set:
+    """Son N saat icinde trade yapilmis ticker'lari don (duplicate prevention)."""
+    if not DB_OK:
+        return set()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        recent = get_recent_trades(limit=100)
+        tickers = set()
+        for t in recent:
+            ts_str = t.get("timestamp", "")
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if ts > cutoff:
+                        tickers.add(t["ticker"])
+                except Exception:
+                    pass
+        return tickers
+    except Exception as e:
+        print(f"[Exit] recent trades hata: {e}")
+        return set()
+
+
+def _check_exits(positions: list, data: dict, current_regime: str) -> list:
+    """
+    Acik pozisyonlari kontrol et ve exit kriterlerine gore kapat.
+
+    Exit kriterleri:
+    1. Stop loss hit
+    2. Take profit hit
+    3. Holding period dolmus (10 gun)
+    4. Crisis rejimi -> tum pozisyonlari kapat
+    5. Fallback: -5% / +10%
+    """
+    if not broker:
+        return []
+
+    exits = []
+
+    # Crisis mode: hepsini kapat
+    if current_regime == "crisis":
+        print("[Exit] CRISIS MODE -- tum pozisyonlar kapatiliyor")
+        for p in positions:
+            try:
+                r = broker.close_position(p["ticker"])
+                if r.get("status") == "closed":
+                    exits.append({"ticker": p["ticker"], "reason": "crisis_regime",
+                                  "pnl": p.get("unrealized_pl", 0)})
+                    print(f"[Exit] CLOSED {p['ticker']} (crisis)")
+            except Exception as e:
+                print(f"[Exit] err {p['ticker']}: {e}")
+        return exits
+
+    # Normal exit kontrolleri
+    for p in positions:
+        ticker = p["ticker"]
+        current_price = p.get("current_price", 0)
+        side = p.get("side", "long")
+        unrealized_pl = p.get("unrealized_pl", 0)
+        unrealized_pct = p.get("unrealized_plpc", 0)
+
+        should_exit = False
+        reason = ""
+
+        try:
+            recent = get_recent_trades(limit=100) if DB_OK else []
+            last_trade = next((t for t in recent if t["ticker"] == ticker), None)
+            if last_trade:
+                sl = last_trade.get("stop_loss", 0)
+                tp = last_trade.get("take_profit", 0)
+                entry_ts = last_trade.get("timestamp", "")
+
+                if sl > 0 and current_price > 0:
+                    if side == "long" and current_price <= sl:
+                        should_exit = True
+                        reason = f"stop_loss_hit ({current_price:.2f} <= {sl:.2f})"
+                    elif side == "short" and current_price >= sl:
+                        should_exit = True
+                        reason = f"stop_loss_hit ({current_price:.2f} >= {sl:.2f})"
+
+                if not should_exit and tp > 0 and current_price > 0:
+                    if side == "long" and current_price >= tp:
+                        should_exit = True
+                        reason = f"take_profit_hit ({current_price:.2f} >= {tp:.2f})"
+                    elif side == "short" and current_price <= tp:
+                        should_exit = True
+                        reason = f"take_profit_hit ({current_price:.2f} <= {tp:.2f})"
+
+                if not should_exit and entry_ts:
+                    try:
+                        entry_dt = datetime.fromisoformat(entry_ts.replace("Z", "+00:00"))
+                        days_held = (datetime.now(timezone.utc) - entry_dt).days
+                        if days_held >= 10:
+                            should_exit = True
+                            reason = f"holding_period_expired ({days_held} gun)"
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[Exit] db lookup err {ticker}: {e}")
+
+        # Fallback: %5 kayip veya %10 kar
+        if not should_exit and unrealized_pct <= -5.0:
+            should_exit = True
+            reason = f"emergency_stop ({unrealized_pct:.2f}%)"
+        elif not should_exit and unrealized_pct >= 10.0:
+            should_exit = True
+            reason = f"emergency_profit ({unrealized_pct:.2f}%)"
+
+        if should_exit:
+            try:
+                r = broker.close_position(ticker)
+                if r.get("status") == "closed":
+                    exits.append({"ticker": ticker, "reason": reason,
+                                  "pnl": unrealized_pl, "pnl_pct": unrealized_pct})
+                    print(f"[Exit] CLOSED {ticker} -- {reason} (PnL: ${unrealized_pl:.2f} / {unrealized_pct:.2f}%)")
+            except Exception as e:
+                print(f"[Exit] close err {ticker}: {e}")
+
+    return exits
 
 
 def run_scan(auto_execute=None):
@@ -221,45 +351,102 @@ def run_scan(auto_execute=None):
         sizing_results = []
         trades_executed = []
 
+        # ─── 4a. Exit Strategy (acik pozisyonlari kontrol et) ─────
+        exits_executed = []
+        if EXIT_CHECK_ENABLED and positions and auto_execute and market_open:
+            exits_executed = _check_exits(positions, data, current_regime=regime)
+            if exits_executed:
+                print(f"[Scan] EXITS: {len(exits_executed)} pozisyon kapatildi")
+                # Pozisyonlari yeniden yukle
+                acc = _get_account_data()
+                positions = acc.get("positions", [])
+
+        # ─── 4b. Yeni sinyal filtreleme ve sizing ─────────────
+        rejects: list = []  # (ticker, reason)
+
         if KELLY_OK and _kelly_engine and valid_signals:
             _kelly_engine.update_equity(equity)
             held = {p["ticker"] for p in positions}
             cur_risk = sum(abs(p.get("unrealized_pl", 0)) / equity for p in positions) if equity > 0 else 0
 
+            # Duplicate prevention: son 24 saatteki trade'ler
+            recent_tickers = _get_recent_trade_tickers(hours=TICKER_COOLDOWN_HOURS)
+
             for sig in valid_signals:
-                if sig.ticker in held or sig.ticker in ("SPY", "QQQ", "IWM") or sig.conviction < 0.2:
+                # Filtre 1: ETF'lerde trade yok (benchmark)
+                if sig.ticker in ("SPY", "QQQ", "IWM"):
+                    rejects.append((sig.ticker, "ETF (benchmark)"))
                     continue
+                # Filtre 2: Zaten acik pozisyon var
+                if sig.ticker in held:
+                    rejects.append((sig.ticker, "zaten acik pozisyon"))
+                    continue
+                # Filtre 3: Cooldown (son 24 saat icinde trade)
+                if sig.ticker in recent_tickers:
+                    rejects.append((sig.ticker, f"cooldown ({TICKER_COOLDOWN_HOURS}h)"))
+                    continue
+                # Filtre 4: Min conviction
+                if sig.conviction < MIN_CONVICTION:
+                    rejects.append((sig.ticker, f"conviction {sig.conviction:.2f} < {MIN_CONVICTION}"))
+                    continue
+                # Filtre 5: Veri yeterli mi?
                 td = data.get(sig.ticker)
                 if td is None or len(td) < 20:
+                    rejects.append((sig.ticker, "yetersiz veri"))
                     continue
+
                 try:
                     price = float(td["close"].values[-1])
                     atr_s = td["true_range"].rolling(14).mean()
                     atr = float(atr_s.values[-1]) if not np.isnan(atr_s.values[-1]) else price * 0.02
                     sl_dir = "long" if sig.direction > 0 else "short"
                     sl = _kelly_engine.calculate_stop_loss(price, atr, sl_dir)
+
                     sz = _kelly_engine.calculate_position_size(
                         equity=equity, signal_direction=sig.direction,
                         signal_conviction=sig.conviction, signal_p_value=sig.p_value,
                         entry_price=price, stop_loss_price=sl,
                         regime_risk_mult=risk_mult, current_portfolio_risk=cur_risk)
+
+                    dollar_amount = sz.get("dollar_amount", 0)
+
+                    # Filtre 6: Min position value
+                    if dollar_amount < MIN_POSITION_VALUE:
+                        rejects.append((sig.ticker, f"pozisyon ${dollar_amount:.0f} < ${MIN_POSITION_VALUE:.0f}"))
+                        continue
+
+                    # Filtre 7: qty > 0 olmali
+                    if sz.get("qty", 0) <= 0:
+                        rejects.append((sig.ticker, "qty=0 (kelly=0 veya risk limiti)"))
+                        continue
+
+                    # Filtre 8: Take profit hesapla (2:1 R:R)
+                    risk_per_share = abs(price - sl)
+                    tp = price + (risk_per_share * 2.0) if sl_dir == "long" else price - (risk_per_share * 2.0)
+
                     sizing_results.append({"ticker": sig.ticker, "signal": sig.name,
                         "side": sz.get("side", "none"), "qty": sz.get("qty", 0),
-                        "price": price, "dollar_amount": sz.get("dollar_amount", 0),
+                        "price": price, "dollar_amount": dollar_amount,
                         "kelly_adjusted": sz.get("kelly_adjusted", 0), "stop_loss": sl,
+                        "take_profit": round(tp, 2),
+                        "holding_period": sig.holding_period,
                         "conviction": sig.conviction, "p_value": sig.p_value,
                         "position_risk_pct": sz.get("position_risk_pct", 0)})
-                except Exception:
-                    pass
+                except Exception as e:
+                    rejects.append((sig.ticker, f"hesaplama hatasi: {e}"))
 
-            # 5. Execute
+            if rejects:
+                print(f"[Scan] REJECTS ({len(rejects)}):")
+                for ticker, reason in rejects[:10]:
+                    print(f"[Scan]   {ticker}: {reason}")
+
+            # ─── 5. Execute (piyasa acikken) ──────────────────
             if auto_execute and market_open:
                 trades_today = get_trade_count_today() if DB_OK else 0
                 for sz in sizing_results:
                     if trades_today + len(trades_executed) >= MAX_DAILY_TRADES:
+                        print(f"[Scan] Gunluk trade limiti ({MAX_DAILY_TRADES}) doldu")
                         break
-                    if sz["qty"] <= 0:
-                        continue
                     try:
                         res = broker.execute_market(sz["ticker"], sz["qty"], sz["side"])
                         if res.get("status") == "submitted":
@@ -269,10 +456,15 @@ def run_scan(auto_execute=None):
                                           price=sz["price"], signal_name=sz["signal"],
                                           signal_direction=1.0 if sz["side"] == "buy" else -1.0,
                                           signal_conviction=sz["conviction"], signal_p_value=sz["p_value"],
-                                          kelly_f=sz["kelly_adjusted"], regime=regime, stop_loss=sz["stop_loss"])
-                            print(f"[Scan] TRADE: {sz['side'].upper()} {sz['ticker']} x{sz['qty']}")
+                                          kelly_f=sz["kelly_adjusted"], regime=regime,
+                                          stop_loss=sz["stop_loss"], take_profit=sz.get("take_profit", 0))
+                            print(f"[Scan] TRADE: {sz['side'].upper()} {sz['ticker']} x{sz['qty']} "
+                                  f"@ ${sz['price']:.2f} (SL ${sz['stop_loss']:.2f}, TP ${sz.get('take_profit',0):.2f})")
                     except Exception as e:
                         print(f"[Scan] Exec err {sz['ticker']}: {e}")
+
+        _reject_log.clear()
+        _reject_log.extend(rejects[:20])
 
         # Dashboard signals
         dash_sigs = [s.to_dict() for s in all_signals[:20]]
@@ -284,6 +476,8 @@ def run_scan(auto_execute=None):
             "regime": regime_result, "signals": dash_sigs,
             "valid_signal_count": len(valid_signals),
             "trades_executed": trades_executed,
+            "exits_executed": exits_executed,
+            "rejects": [{"ticker": t, "reason": r} for t, r in _reject_log[:20]],
             "portfolio": {"equity": equity, "cash": acc.get("cash", 0),
                           "buying_power": acc.get("buying_power", 0),
                           "positions": positions, "n_positions": len(positions)},
@@ -427,48 +621,30 @@ async def stats():
             "scheduler": _scheduler.running if _scheduler else False}
 
 
-@app.get("/api/debug")
-async def debug():
-    """Broker baglanti sorunlarini teshis icin."""
-    key = os.getenv("ALPACA_API_KEY", "")
-    secret = os.getenv("ALPACA_SECRET_KEY", "")
-    base_url = os.getenv("ALPACA_BASE_URL", "")
-
-    # Canli broker testi
-    test_result = None
-    test_error = None
-    try:
-        from broker import SimonsBroker
-        test_broker = SimonsBroker()
-        acc = test_broker.get_account()
-        test_result = {
-            "connected": True,
-            "equity": acc.get("equity", 0),
-            "cash": acc.get("cash", 0),
-            "positions": len(test_broker.get_positions()),
-        }
-    except Exception as e:
-        test_error = f"{type(e).__name__}: {str(e)}"
-
+@app.get("/api/diagnostics")
+async def diagnostics():
+    """Sistem saglik kontrolu (key prefix'leri yok, sadece bool)."""
     return {
-        "env_vars": {
-            "ALPACA_API_KEY_set": bool(key),
-            "ALPACA_API_KEY_length": len(key),
-            "ALPACA_API_KEY_prefix": key[:6] if key else None,
-            "ALPACA_SECRET_KEY_set": bool(secret),
-            "ALPACA_SECRET_KEY_length": len(secret),
-            "ALPACA_SECRET_KEY_prefix": secret[:6] if secret else None,
-            "ALPACA_BASE_URL": base_url or "NOT SET",
-            "PORT": os.getenv("PORT", "NOT SET"),
+        "env_configured": {
+            "alpaca_api_key": bool(os.getenv("ALPACA_API_KEY")),
+            "alpaca_secret_key": bool(os.getenv("ALPACA_SECRET_KEY")),
+            "alpaca_base_url": bool(os.getenv("ALPACA_BASE_URL")),
         },
-        "broker_state": {
-            "global_broker_is_none": broker is None,
-            "test_connect_success": test_result is not None,
-            "test_result": test_result,
-            "test_error": test_error,
-        },
-        "module_status": {
+        "broker_connected": broker is not None,
+        "modules": {
             "db": DB_OK, "pipeline": PIPELINE_OK, "hmm": HMM_OK,
             "signals": SIGNAL_OK, "kelly": KELLY_OK, "scheduler": SCHED_OK,
         },
+        "config": {
+            "p_threshold": P_VALUE_THRESHOLD,
+            "min_conviction": MIN_CONVICTION,
+            "min_position_value": MIN_POSITION_VALUE,
+            "cooldown_hours": TICKER_COOLDOWN_HOURS,
+            "scan_interval_min": SCAN_INTERVAL_MINUTES,
+            "max_daily_trades": MAX_DAILY_TRADES,
+            "exit_check": EXIT_CHECK_ENABLED,
+            "auto_execute": _auto_execute,
+        },
+        "scheduler_running": _scheduler.running if _scheduler else False,
+        "scan_count": _scan_count,
     }
