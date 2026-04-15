@@ -9,4 +9,6 @@ COPY . .
 
 WORKDIR /app/server
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+EXPOSE 8080
+
+CMD ["python", "-c", "import uvicorn; import os; uvicorn.run('main:app', host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))"]
