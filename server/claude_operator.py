@@ -20,9 +20,33 @@ from typing import Optional
 
 try:
     from anthropic import Anthropic
+    import httpx
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
+
+
+def _make_httpx_client():
+    """
+    Railway IPv6 routing sorunu icin IPv4'u zorla.
+    Anthropic SDK'nin default httpx client'i bazi Railway region'larinda
+    IPv6'ya takilip "Connection error" veriyor.
+    """
+    try:
+        import socket
+        import httpx
+        # local_address="0.0.0.0" IPv4 bind zorlar
+        transport = httpx.HTTPTransport(
+            local_address="0.0.0.0",
+            retries=2,
+        )
+        return httpx.Client(
+            transport=transport,
+            timeout=httpx.Timeout(30.0, connect=10.0),
+        )
+    except Exception as e:
+        print(f"[Claude] httpx client build warning: {e}")
+        return None
 
 # Model ve config
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
@@ -68,9 +92,15 @@ class ClaudeOperator:
             return
 
         try:
-            self.client = Anthropic(api_key=api_key)
+            # IPv4 forced httpx client (Railway IPv6 bug workaround)
+            http_client = _make_httpx_client()
+            if http_client:
+                self.client = Anthropic(api_key=api_key, http_client=http_client)
+                print(f"[Claude] Operator ready (IPv4-forced) -- model: {self.model}, budget: ${CLAUDE_DAILY_BUDGET_USD}/day")
+            else:
+                self.client = Anthropic(api_key=api_key)
+                print(f"[Claude] Operator ready -- model: {self.model}, budget: ${CLAUDE_DAILY_BUDGET_USD}/day")
             self.available = True
-            print(f"[Claude] Operator ready -- model: {self.model}, budget: ${CLAUDE_DAILY_BUDGET_USD}/day")
         except Exception as e:
             self.last_error = f"init failed: {e}"
             print(f"[Claude] Init error: {e}")
