@@ -193,7 +193,10 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
       </div>
     </div>
     <div class="sidebar-section">
-      <div class="sidebar-section-title">AI Operator</div>
+      <div class="sidebar-section-title">Claude Operator</div>
+      <div class="nav-item" onclick="showSection('claude')">
+        <span class="nav-icon">C</span> Claude Status
+      </div>
       <div class="nav-item" onclick="showSection('aidecisions')">
         <span class="nav-icon">A</span> AI Decisions
       </div>
@@ -391,6 +394,28 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
         <div class="signals-panel">
           <div class="regime-title">System Diagnostics</div>
           <div id="diagnosticsResult" style="font-family:var(--font-mono);font-size:12px;">Yukleniyor...</div>
+        </div>
+      </div>
+
+      <!-- CLAUDE OPERATOR STATUS -->
+      <div id="section-claude" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">Claude Operator (Jim Simmons Brain)</div>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:16px;">
+            Claude AI (Sonnet 4.5) piyasayi analiz eder, sinyalleri degerlendirir,
+            trade kararlarini onaylar/reddeder. Piyasa acikken 15dk, kapaliyken 60dk'da bir calisir.
+          </p>
+          <div id="claudeStatusBar" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+            <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value" id="claudeAvail" style="font-size:16px;">--</div></div>
+            <div class="stat-card"><div class="stat-label">Calls Today</div><div class="stat-value" id="claudeCalls" style="font-size:18px;">--</div></div>
+            <div class="stat-card"><div class="stat-label">Cost Today</div><div class="stat-value" id="claudeCost" style="font-size:18px;">$--</div></div>
+            <div class="stat-card"><div class="stat-label">Budget Left</div><div class="stat-value" id="claudeBudget" style="font-size:18px;color:var(--green);">$--</div></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <button class="scan-btn" onclick="loadClaudeStatus()">Refresh Status</button>
+            <button class="scan-btn" onclick="triggerClaude()">Trigger Now (Test)</button>
+          </div>
+          <div id="claudeDetails" style="background:var(--bg-hover);padding:14px;border-radius:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);">Yukleniyor...</div>
         </div>
       </div>
 
@@ -829,6 +854,62 @@ async function runOptimize(method) {
   } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
 }
 
+async function loadClaudeStatus() {
+  try {
+    const s = await fetch('/api/claude/status').then(r => r.json());
+    const availEl = document.getElementById('claudeAvail');
+    availEl.textContent = s.available ? 'ONLINE' : 'OFFLINE';
+    availEl.style.color = s.available ? 'var(--green)' : 'var(--red)';
+    document.getElementById('claudeCalls').textContent = s.calls_today || 0;
+    const cost = s.cost_today_usd || 0;
+    document.getElementById('claudeCost').textContent = '$' + cost.toFixed(4);
+    const remaining = s.budget_remaining_usd || 0;
+    const budgetEl = document.getElementById('claudeBudget');
+    budgetEl.textContent = '$' + remaining.toFixed(2);
+    budgetEl.style.color = remaining < 0.5 ? 'var(--red)' : remaining < 2 ? 'var(--orange)' : 'var(--green)';
+
+    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+    html += '<div><b>Model:</b> ' + (s.model || '--') + '</div>';
+    html += '<div><b>Daily Budget:</b> $' + (s.daily_budget_usd || 0) + '</div>';
+    html += '<div><b>Tokens In (today):</b> ' + (s.tokens_today_input || 0).toLocaleString() + '</div>';
+    html += '<div><b>Tokens Out (today):</b> ' + (s.tokens_today_output || 0).toLocaleString() + '</div>';
+    html += '<div><b>Interval (open):</b> ' + (s.interval_open_min || 15) + ' min</div>';
+    html += '<div><b>Interval (closed):</b> ' + (s.interval_closed_min || 60) + ' min</div>';
+    html += '<div><b>Last Call:</b> ' + (s.last_call_at ? s.last_call_at.slice(0,19).replace('T',' ') : 'never') + '</div>';
+    html += '<div><b>Last Claude Cycle:</b> ' + (s.last_claude_call_at ? s.last_claude_call_at.slice(0,19).replace('T',' ') : 'never') + '</div>';
+    html += '</div>';
+    if (s.last_error) {
+      html += '<div style="margin-top:12px;padding:10px;background:' + (s.available ? 'var(--bg-secondary)' : '#fee2e2') + ';border-radius:6px;"><b>Last Error:</b> <span style="color:var(--red)">' + s.last_error + '</span></div>';
+    }
+    document.getElementById('claudeDetails').innerHTML = html;
+  } catch(e) { document.getElementById('claudeDetails').innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function triggerClaude() {
+  const el = document.getElementById('claudeDetails');
+  el.innerHTML = 'Claude cagriliyor... (15-30 saniye surebilir)';
+  try {
+    const r = await fetch('/api/claude/trigger', {method:'POST'});
+    const d = await r.json();
+    if (d.skipped) {
+      el.innerHTML = '<div style="color:var(--orange)">SKIPPED: ' + d.reason + '</div>';
+      return;
+    }
+    let html = '<div style="background:#dcfce7;border-left:3px solid var(--green);padding:12px;border-radius:6px;margin-bottom:12px;">';
+    html += '<div style="font-size:14px;font-weight:700;color:var(--green);">CLAUDE RESPONDED</div>';
+    html += '<div style="margin-top:6px;">Actions: ' + (d.actions_count || 0) + ' | Executed: ' + (d.executed_count || 0) + ' | Cost: $' + (d.cost_usd || 0).toFixed(4) + '</div>';
+    html += '</div>';
+    html += '<div><b>Reasoning preview:</b><br><span style="font-size:11px;">' + (d.reasoning_preview || '(empty)') + '</span></div>';
+    if (d.executed && d.executed.length) {
+      html += '<div style="margin-top:10px;"><b>Executed Actions:</b><ul>';
+      for (const e of d.executed) html += '<li>' + JSON.stringify(e) + '</li>';
+      html += '</ul></div>';
+    }
+    el.innerHTML = html;
+    setTimeout(loadClaudeStatus, 1000);
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
 async function loadAIDecisions(filterStatus) {
   const el = document.getElementById('aiDecisionsList');
   el.innerHTML = 'Yukleniyor...';
@@ -986,9 +1067,11 @@ async function loadRisk() {
 loadData();
 loadRisk();
 loadDiagnostics();
+loadClaudeStatus();
 setInterval(loadData, 30000);
 setInterval(loadRisk, 60000);
 setInterval(loadDiagnostics, 60000);
+setInterval(loadClaudeStatus, 30000);
 </script>
 </body>
 </html>

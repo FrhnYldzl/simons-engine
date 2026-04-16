@@ -4,10 +4,12 @@ main.py -- Simons Engine Server v1.5.1 (Railway-safe)
 
 import os
 import sys
+import json
 import traceback
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 print(f"[Boot] Python {sys.version}")
 print(f"[Boot] CWD: {os.getcwd()}")
@@ -106,6 +108,22 @@ except Exception as e:
     print(f"[Boot] nlp_engine FAIL: {e}")
 
 try:
+    from claude_operator import get_operator, is_claude_available
+    CLAUDE_OK = True
+    print("[Boot] claude_operator OK")
+except Exception as e:
+    CLAUDE_OK = False
+    print(f"[Boot] claude_operator FAIL: {e}")
+
+try:
+    from operator_prompt import get_operator_prompt
+    OPERATOR_PROMPT_OK = True
+    print("[Boot] operator_prompt OK")
+except Exception as e:
+    OPERATOR_PROMPT_OK = False
+    print(f"[Boot] operator_prompt FAIL: {e}")
+
+try:
     import numpy as np
     print("[Boot] numpy OK")
 except Exception as e:
@@ -142,7 +160,10 @@ P_VALUE_THRESHOLD = 0.05          # Medallion'a yakin sikilik (onceki 0.10)
 MIN_CONVICTION = 0.30             # Dusuk conviction sinyallerini reddet
 MIN_POSITION_VALUE = 500.0        # $500 altindaki pozisyonlari atla
 TICKER_COOLDOWN_HOURS = 24        # Ayni ticker'a 24 saat icinde 2. trade yasak
-SCAN_INTERVAL_MINUTES = 30        # Saatte 2 tarama (onceki 10dk cok agresif)
+SCAN_INTERVAL_MINUTES = 15        # Data scan: her 15dk (piyasa durumundan bagimsiz)
+CLAUDE_CYCLE_INTERVAL_OPEN_MIN = 15   # Piyasa acik: Claude her 15dk karar verir
+CLAUDE_CYCLE_INTERVAL_CLOSED_MIN = 60 # Piyasa kapali: Claude 60dk'da bir (cost tasarrufu)
+_last_claude_call_at: Optional[datetime] = None
 MAX_DAILY_TRADES = 3              # PDT koruma + risk sinirlama
 EXIT_CHECK_ENABLED = True         # Acik pozisyonlari her scan'de kontrol et
 
@@ -333,6 +354,197 @@ def _check_exits(positions: list, data: dict, current_regime: str) -> list:
                 print(f"[Exit] close err {ticker}: {e}")
 
     return exits
+
+
+def _run_claude_operator_cycle():
+    """
+    Her scan sonrasi Claude'u cagir, pending decisions'i onaylat,
+    yeni trade proposals al ve execute et.
+
+    Fail-safe: Claude yoksa hicbir sey yapma.
+    """
+    if not CLAUDE_OK or not OPERATOR_PROMPT_OK or not DB_OK or not broker:
+        return {"skipped": True, "reason": "claude/prompt/db/broker not available"}
+
+    try:
+        op = get_operator()
+        if not op.available:
+            return {"skipped": True, "reason": op.last_error or "operator not available"}
+
+        # Build context (kompakt)
+        acc = _get_account_data()
+        context = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "market_open": _is_market_open(),
+            "regime": _last_scan.get("regime", {}).get("regime", "normal"),
+            "regime_risk_mult": _last_scan.get("regime", {}).get("risk_multiplier", 1.0),
+            "equity": acc.get("equity", 100000),
+            "cash": acc.get("cash", 0),
+            "n_positions": acc.get("n_positions", 0),
+            "positions_summary": [
+                {"t": p["ticker"], "qty": p["qty"], "side": p.get("side", "long"),
+                 "pnl": p.get("unrealized_pl", 0), "pnl_pct": p.get("unrealized_plpc", 0)}
+                for p in acc.get("positions", [])[:15]
+            ],
+            "valid_signals": [
+                {"t": s["ticker"], "name": s.get("signal_name", ""),
+                 "dir": s["direction"], "conv": s["conviction"],
+                 "p": s["p_value"], "side": s["side"]}
+                for s in _last_scan.get("signals", [])[:10]
+                if s.get("p_value", 1.0) < P_VALUE_THRESHOLD
+                and s.get("conviction", 0) >= MIN_CONVICTION
+            ],
+            "rejects": _last_scan.get("rejects", [])[:10],
+            "trades_today": get_trade_count_today(),
+            "max_trades_remaining": max(0, MAX_DAILY_TRADES - get_trade_count_today()),
+            "risk_status": _last_scan.get("risk_status", {}),
+        }
+
+        pending = get_pending_decisions(limit=10)
+
+        print(f"[Claude] Calling operator... ({len(context.get('valid_signals',[]))} signals, {len(pending)} pending)")
+
+        result = op.decide(
+            system_prompt=get_operator_prompt(),
+            context=context,
+            pending=pending,
+        )
+
+        if not result.get("success"):
+            print(f"[Claude] FAILED: {result.get('error')}")
+            return {"skipped": True, "reason": result.get("error"), "cost": 0}
+
+        cost = result.get("cost_usd", 0)
+        actions = result.get("actions", [])
+        print(f"[Claude] Got {len(actions)} actions | cost: ${cost:.4f} | daily: ${result.get('daily_cost_usd', 0):.4f}")
+
+        # Execute actions
+        executed = []
+        for action in actions:
+            atype = action.get("type", "")
+
+            try:
+                if atype == "propose_trade":
+                    # Hard limits check (engine enforces)
+                    ticker = action.get("ticker", "").upper()
+                    qty = int(action.get("qty", 0))
+                    price = float(action.get("price", 0))
+                    conviction = float(action.get("conviction", 0.5))
+
+                    if not ticker or qty <= 0:
+                        continue
+                    if ticker in ("SPY", "QQQ", "IWM"):
+                        continue  # ETF trade yok
+                    if price * qty < MIN_POSITION_VALUE:
+                        continue  # Min position
+                    if conviction < MIN_CONVICTION:
+                        continue
+
+                    # Log as AI decision
+                    decision_id = log_ai_decision(
+                        ai_model=op.model,
+                        context_snapshot={"regime": context["regime"], "equity": context["equity"]},
+                        reasoning=action.get("reasoning", "")[:1000],
+                        decision_type="propose_trade",
+                        decision_detail=action,
+                        ticker=ticker,
+                        side=action.get("side", "buy").lower(),
+                        qty=qty,
+                        price=price,
+                        conviction=conviction,
+                    )
+
+                    # Auto-approve Claude's own proposals (çünkü Claude zaten karar verici)
+                    if _is_market_open() and qty > 0:
+                        trades_remaining = context.get("max_trades_remaining", 0)
+                        if trades_remaining > 0:
+                            res = broker.execute_market(ticker, qty, action.get("side", "buy"))
+                            if res.get("status") == "submitted":
+                                trade_id = log_trade(
+                                    ticker=ticker, side=action.get("side", "buy"),
+                                    qty=qty, price=price,
+                                    signal_name=f"claude_{op.model}",
+                                    signal_direction=1.0 if action.get("side") == "buy" else -1.0,
+                                    signal_conviction=conviction,
+                                    signal_p_value=0.0,
+                                    kelly_f=0, regime=context["regime"], stop_loss=0,
+                                )
+                                approve_ai_decision(decision_id, f"claude_{op.model}_auto", trade_id)
+                                executed.append({"type": "propose_trade_executed", "ticker": ticker,
+                                                  "qty": qty, "decision_id": decision_id, "trade_id": trade_id})
+                                print(f"[Claude] EXECUTED: {action.get('side','buy').upper()} {ticker} x{qty} @ ${price}")
+                            else:
+                                reject_ai_decision(decision_id, "system",
+                                                    f"broker rejected: {res.get('message','')}")
+                        else:
+                            print(f"[Claude] Daily limit reached, queued: {ticker}")
+                    else:
+                        executed.append({"type": "propose_queued", "ticker": ticker, "decision_id": decision_id})
+
+                elif atype == "approve":
+                    decision_id = action.get("decision_id")
+                    if not decision_id:
+                        continue
+                    # Re-use /api/agent/approve logic inline
+                    decisions = get_all_decisions(limit=100, status="pending")
+                    d = next((x for x in decisions if x["id"] == decision_id), None)
+                    if d and _is_market_open():
+                        res = broker.execute_market(d["ticker"], d["qty"], d["side"])
+                        if res.get("status") == "submitted":
+                            trade_id = log_trade(
+                                ticker=d["ticker"], side=d["side"], qty=d["qty"], price=d["price"],
+                                signal_name=f"claude_{op.model}",
+                                signal_direction=1.0 if d["side"] == "buy" else -1.0,
+                                signal_conviction=d["conviction"], signal_p_value=0.0,
+                                kelly_f=0, regime=context["regime"], stop_loss=0,
+                            )
+                            approve_ai_decision(decision_id, f"claude_{op.model}", trade_id)
+                            executed.append({"type": "approved_executed", "decision_id": decision_id})
+
+                elif atype == "reject":
+                    decision_id = action.get("decision_id")
+                    reason = action.get("reason", "claude rejected")
+                    if decision_id:
+                        reject_ai_decision(decision_id, f"claude_{op.model}", reason)
+                        executed.append({"type": "rejected", "decision_id": decision_id})
+
+                elif atype == "hold":
+                    # Log olarak
+                    log_ai_decision(
+                        ai_model=op.model, context_snapshot={"regime": context["regime"]},
+                        reasoning=action.get("reason", "hold")[:500],
+                        decision_type="hold", decision_detail=action,
+                    )
+                    executed.append({"type": "hold"})
+
+            except Exception as e:
+                print(f"[Claude] Action error: {e}")
+
+        # Log overall cycle
+        log_ai_analysis(
+            ai_model=op.model,
+            analysis_type="full_cycle",
+            ticker="",
+            input_context=context,
+            output_reasoning=result.get("reasoning", "")[:3000],
+            output_verdict=json.dumps(executed),
+            tokens_used=result.get("input_tokens", 0) + result.get("output_tokens", 0),
+        )
+
+        return {
+            "success": True,
+            "actions_count": len(actions),
+            "executed_count": len(executed),
+            "cost_usd": cost,
+            "daily_cost_usd": result.get("daily_cost_usd", 0),
+            "reasoning_preview": result.get("reasoning", "")[:200],
+            "executed": executed,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"skipped": True, "reason": f"exception: {str(e)}"}
 
 
 def run_scan(auto_execute=None):
@@ -542,6 +754,31 @@ def run_scan(auto_execute=None):
                      summary=f"#{_scan_count} {regime} {len(valid_signals)}sig {len(trades_executed)}trade")
 
         print(f"[Scan] Done: {regime} | {len(valid_signals)}sig | {len(trades_executed)}trade")
+
+        # ═══ Claude Operator Cycle (dinamik interval) ═══
+        # Piyasa acik: her 15dk (her scan'de)
+        # Piyasa kapali: 60dk'da bir (token tasarrufu)
+        if CLAUDE_OK and OPERATOR_PROMPT_OK:
+            global _last_claude_call_at
+            now = datetime.now(timezone.utc)
+            should_call = True
+
+            if _last_claude_call_at:
+                elapsed_min = (now - _last_claude_call_at).total_seconds() / 60
+                min_interval = CLAUDE_CYCLE_INTERVAL_OPEN_MIN if market_open else CLAUDE_CYCLE_INTERVAL_CLOSED_MIN
+                if elapsed_min < min_interval - 1:  # 1 dk buffer
+                    should_call = False
+                    print(f"[Claude] Skipped (elapsed {elapsed_min:.1f}min < {min_interval}min, market={'OPEN' if market_open else 'CLOSED'})")
+
+            if should_call:
+                _last_claude_call_at = now
+                claude_result = _run_claude_operator_cycle()
+                if not claude_result.get("skipped"):
+                    print(f"[Claude] Cycle done: {claude_result.get('actions_count',0)} actions, "
+                          f"{claude_result.get('executed_count',0)} executed, "
+                          f"${claude_result.get('cost_usd',0):.4f}")
+                else:
+                    print(f"[Claude] Call skipped: {claude_result.get('reason')}")
 
     except Exception as e:
         print(f"[Scan] ERROR: {e}")
@@ -1071,6 +1308,32 @@ async def training_export(limit: int = 1000):
         "format": "jsonl-ready",
         "samples": data,
     }
+
+
+@app.get("/api/claude/status")
+async def claude_status():
+    """Claude operator canlı durumu: availability, token usage, cost."""
+    if not CLAUDE_OK:
+        return {"available": False, "error": "claude_operator module not loaded"}
+    try:
+        op = get_operator()
+        status = op.get_status()
+        status["last_claude_call_at"] = _last_claude_call_at.isoformat() if _last_claude_call_at else None
+        status["interval_open_min"] = CLAUDE_CYCLE_INTERVAL_OPEN_MIN
+        status["interval_closed_min"] = CLAUDE_CYCLE_INTERVAL_CLOSED_MIN
+        return status
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+
+
+@app.post("/api/claude/trigger")
+async def claude_trigger():
+    """Manuel Claude cycle tetikle (dashboard'dan test icin)."""
+    if not CLAUDE_OK:
+        return {"error": "claude not available"}
+    global _last_claude_call_at
+    _last_claude_call_at = datetime.now(timezone.utc)
+    return _run_claude_operator_cycle()
 
 
 @app.get("/api/agent/stats")
