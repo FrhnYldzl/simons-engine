@@ -146,13 +146,31 @@ PHASE_NAME = "Full FP-01..09 Modules"
 
 # ─── Universe ─────────────────────────────────────────
 UNIVERSE = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
-    "AMD", "AVGO", "INTC", "JPM", "GS", "BAC",
-    "JNJ", "PFE", "UNH", "XOM", "CVX",
-    "WMT", "COST", "HD",
+    # ─── NASDAQ 100 + Benchmark ETFs (100+ ticker) ───
+    # Mega-cap Tech (top weights)
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "AVGO", "TSLA", "GOOGL", "GOOG", "COST",
+    # Consumer / Comm
+    "NFLX", "TMUS", "CMCSA", "SBUX", "PEP", "MDLZ", "MNST", "KDP", "KHC", "LULU",
+    # Semiconductors
+    "AMD", "QCOM", "TXN", "AMAT", "MU", "LRCX", "KLAC", "ADI", "MRVL", "NXPI",
+    "ASML", "MCHP", "ON", "ARM", "SMCI", "INTC",
+    # Software / Cloud
+    "ADBE", "CSCO", "INTU", "PANW", "CRWD", "FTNT", "SNPS", "CDNS", "ADSK",
+    "WDAY", "DDOG", "TEAM", "ZS", "MDB", "APP", "PLTR", "MSTR", "TTD", "CDW",
+    # Healthcare / Biotech
+    "ISRG", "AMGN", "VRTX", "GILD", "REGN", "IDXX", "DXCM", "BIIB", "AZN", "GEHC",
+    # Industrials / Services
+    "HON", "ADP", "CTAS", "PAYX", "FAST", "ODFL", "CPRT", "VRSK", "ROP",
+    "CSX", "PCAR", "BKR",
+    # Retail / Travel
+    "BKNG", "MAR", "ABNB", "ORLY", "ROST", "DASH", "PDD", "MELI",
+    # Finance / Media / Utilities / Other
+    "PYPL", "CHTR", "EA", "TTWO", "WBD", "CSGP", "ANSS",
+    "CEG", "AEP", "EXC", "XEL", "CTSH", "FANG",
+    # Benchmark ETFs (sinyal yok, sadece rejim tespiti)
     "SPY", "QQQ", "IWM",
-    "MARA", "COIN", "NFLX", "SQ", "SHOP",
 ]
+# 97 NASDAQ hisse + 3 ETF = 100 ticker. Alpaca free tier 200 req/min icinde.
 
 # ─── Engine Configuration ─────────────────────────────
 # Trading kurallari (canliya gecmeden once sikilastirildi)
