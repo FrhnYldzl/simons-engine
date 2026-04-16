@@ -185,9 +185,18 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
       <div class="nav-item" onclick="showSection('risk')">
         <span class="nav-icon">K</span> Kelly Risk
       </div>
+      <div class="nav-item" onclick="showSection('backtest')">
+        <span class="nav-icon">B</span> Backtest
+      </div>
+      <div class="nav-item" onclick="showSection('portfolio')">
+        <span class="nav-icon">O</span> Portfolio
+      </div>
     </div>
     <div class="sidebar-section">
-      <div class="sidebar-section-title">Info</div>
+      <div class="sidebar-section-title">System</div>
+      <div class="nav-item" onclick="showSection('diagnostics')">
+        <span class="nav-icon">D</span> Diagnostics
+      </div>
       <div class="nav-item" onclick="showSection('about')">
         <span class="nav-icon">i</span> About
       </div>
@@ -326,6 +335,53 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
         <div class="risk-panel">
           <div class="regime-title">Kelly Criterion Risk Engine</div>
           <div class="risk-grid" id="riskGrid"></div>
+        </div>
+      </div>
+
+      <!-- BACKTEST (FP-09) -->
+      <div id="section-backtest" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">Backtest Framework (FP-09)</div>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:16px;">
+            Historical replay + Walk-forward validation + Deflated Sharpe + Monte Carlo stress.
+            Sadece DSR &gt; 0.95 olan sinyaller kabul edilir.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button class="scan-btn" onclick="runBacktest('mean_reversion')">Test Mean Reversion</button>
+            <button class="scan-btn" onclick="runBacktest('momentum')">Test Momentum</button>
+            <button class="scan-btn" onclick="runValidation('mean_reversion')">Validate Mean Rev</button>
+            <button class="scan-btn" onclick="runValidation('momentum')">Validate Momentum</button>
+          </div>
+          <div id="backtestResult" style="background:var(--bg-hover);border-radius:8px;padding:14px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);min-height:60px;">
+            Sinyal secerek backtest baslatin. Cached data gerekli (once /api/scan calisir olmali).
+          </div>
+        </div>
+      </div>
+
+      <!-- PORTFOLIO (FP-07) -->
+      <div id="section-portfolio" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">Portfolio Optimizer (FP-07)</div>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:16px;">
+            Long-short market neutral construction. Net exposure ~ 0, portfolio beta minimize.
+            Medallion'un 2008'deki %82 getirisinin kaynagi bu katman.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <button class="scan-btn" onclick="runOptimize('market_neutral')">Market Neutral</button>
+            <button class="scan-btn" onclick="runOptimize('risk_parity')">Risk Parity</button>
+            <button class="scan-btn" onclick="runOptimize('equal_weight')">Equal Weight</button>
+          </div>
+          <div id="portfolioResult" style="background:var(--bg-hover);border-radius:8px;padding:14px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);min-height:60px;">
+            Optimize metodunu secin. Son scan'in sinyalleri kullanilir.
+          </div>
+        </div>
+      </div>
+
+      <!-- DIAGNOSTICS -->
+      <div id="section-diagnostics" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">System Diagnostics</div>
+          <div id="diagnosticsResult" style="font-family:var(--font-mono);font-size:12px;">Yukleniyor...</div>
         </div>
       </div>
 
@@ -627,13 +683,137 @@ function updateDashboard(scan, account, trades) {
 }
 
 async function runScan() {
-  document.querySelector('.scan-btn').textContent = 'SCANNING...';
+  document.querySelectorAll('.scan-btn').forEach(b => { if(b.textContent==='SCAN NOW') b.textContent='SCANNING...'; });
   try {
     const res = await fetch('/api/scan-now', {method:'POST'});
     const data = await res.json();
     await loadData();
   } catch(e) { console.error(e); }
-  document.querySelector('.scan-btn').textContent = 'SCAN NOW';
+  document.querySelectorAll('.scan-btn').forEach(b => { if(b.textContent==='SCANNING...') b.textContent='SCAN NOW'; });
+}
+
+async function runBacktest(strategy) {
+  const el = document.getElementById('backtestResult');
+  el.innerHTML = 'Backtest calistiriliyor... (' + strategy + ')';
+  try {
+    const res = await fetch('/api/backtest/' + strategy);
+    const data = await res.json();
+    if (data.error) {
+      el.innerHTML = '<span style="color:var(--red)">ERROR: ' + data.error + '</span>';
+      return;
+    }
+    const sharpeColor = data.sharpe_ratio > 1 ? 'var(--green)' : data.sharpe_ratio < 0 ? 'var(--red)' : 'var(--orange)';
+    el.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+      '<div><b>Strategy:</b> ' + strategy + '</div>' +
+      '<div><b>Observations:</b> ' + (data.n_observations || 0) + '</div>' +
+      '<div><b>Total Return:</b> <span style="color:' + (data.total_return_pct >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (data.total_return_pct || 0).toFixed(2) + '%</span></div>' +
+      '<div><b>Ann Return:</b> ' + (data.annualized_return_pct || 0).toFixed(2) + '%</div>' +
+      '<div><b>Sharpe Ratio:</b> <span style="color:' + sharpeColor + ';font-weight:700">' + (data.sharpe_ratio || 0).toFixed(3) + '</span></div>' +
+      '<div><b>Sortino:</b> ' + (data.sortino_ratio || 0).toFixed(3) + '</div>' +
+      '<div><b>Max Drawdown:</b> <span style="color:var(--red)">' + (data.max_drawdown_pct || 0).toFixed(2) + '%</span></div>' +
+      '<div><b>Win Rate:</b> ' + (data.win_rate_pct || 0).toFixed(2) + '%</div>' +
+      '<div><b>Profit Factor:</b> ' + (data.profit_factor || 0).toFixed(3) + '</div>' +
+      '<div><b>Trades:</b> ' + (data.n_trades || 0) + '</div>' +
+      '<div><b>Skewness:</b> ' + (data.skewness || 0).toFixed(3) + '</div>' +
+      '<div><b>Kurtosis:</b> ' + (data.kurtosis || 0).toFixed(3) + '</div>' +
+      '</div>' +
+      '<div style="margin-top:12px;color:var(--text-muted);">Final Equity: $' + Number(data.final_equity || 0).toLocaleString() + '</div>';
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function runValidation(strategy) {
+  const el = document.getElementById('backtestResult');
+  el.innerHTML = 'Validation calistiriliyor... (CPCV + DSR + Monte Carlo)';
+  try {
+    const res = await fetch('/api/validate/' + strategy);
+    const data = await res.json();
+    if (data.error) {
+      el.innerHTML = '<span style="color:var(--red)">ERROR: ' + data.error + '</span>';
+      return;
+    }
+    const verdictColor = data.verdict === 'accept' ? 'var(--green)' : data.verdict === 'borderline' ? 'var(--orange)' : 'var(--red)';
+    const m = data.backtest_metrics || {};
+    el.innerHTML =
+      '<div style="background:' + verdictColor + '22;border-left:3px solid ' + verdictColor + ';padding:12px;border-radius:6px;margin-bottom:12px;">' +
+        '<div style="font-size:16px;font-weight:700;color:' + verdictColor + ';text-transform:uppercase;">' + data.verdict + '</div>' +
+        '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">' + data.reason + '</div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+        '<div><b>Deflated Sharpe:</b> ' + (data.deflated_sharpe || 0).toFixed(4) + '</div>' +
+        '<div><b>Raw Sharpe:</b> ' + (m.sharpe_ratio || 0).toFixed(3) + '</div>' +
+        '<div><b>Total Return:</b> ' + (m.total_return_pct || 0).toFixed(2) + '%</div>' +
+        '<div><b>Max DD:</b> ' + (m.max_drawdown_pct || 0).toFixed(2) + '%</div>' +
+        '<div><b>Win Rate:</b> ' + (m.win_rate_pct || 0).toFixed(2) + '%</div>' +
+        '<div><b>N Obs:</b> ' + (m.n_observations || 0) + '</div>' +
+      '</div>';
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function runOptimize(method) {
+  const el = document.getElementById('portfolioResult');
+  el.innerHTML = 'Optimizing... (' + method + ')';
+  try {
+    const res = await fetch('/api/portfolio/optimize?method=' + method);
+    const data = await res.json();
+    if (data.error) {
+      el.innerHTML = '<span style="color:var(--red)">' + data.error + '</span><br><span style="color:var(--text-muted);font-size:10px;">Signal count: ' + (data.signals_count || 0) + '. Onceki scan\'de valid signal olmali.</span>';
+      return;
+    }
+    const netColor = Math.abs(data.net_exposure) < 0.05 ? 'var(--green)' : 'var(--orange)';
+    let weightsHtml = '';
+    for (const [t, w] of Object.entries(data.weights || {})) {
+      const wColor = w > 0 ? 'var(--green)' : 'var(--red)';
+      weightsHtml += '<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>' + t + '</span><span style="color:' + wColor + '">' + (w*100).toFixed(2) + '%</span></div>';
+    }
+    const exp = data.factor_exposures || {};
+    el.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">' +
+        '<div><b>Method:</b> ' + (data.method || method) + '</div>' +
+        '<div><b>Long exp:</b> <span style="color:var(--green)">' + ((data.long_exposure||0)*100).toFixed(2) + '%</span></div>' +
+        '<div><b>Short exp:</b> <span style="color:var(--red)">' + ((data.short_exposure||0)*100).toFixed(2) + '%</span></div>' +
+        '<div><b>Net exp:</b> <span style="color:' + netColor + '">' + ((data.net_exposure||0)*100).toFixed(2) + '%</span></div>' +
+        '<div><b>Gross exp:</b> ' + ((data.gross_exposure||0)*100).toFixed(2) + '%</div>' +
+        '<div><b>N positions:</b> ' + (data.n_long||0) + ' long / ' + (data.n_short||0) + ' short</div>' +
+        (exp.portfolio_beta !== undefined ? '<div><b>Portfolio beta:</b> ' + exp.portfolio_beta.toFixed(4) + '</div>' : '') +
+      '</div>' +
+      '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px;"><div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Weights</div>' + weightsHtml + '</div>';
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function loadDiagnostics() {
+  const el = document.getElementById('diagnosticsResult');
+  try {
+    const res = await fetch('/api/diagnostics');
+    const data = await res.json();
+    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">';
+    // Env
+    html += '<div style="background:var(--bg-hover);padding:12px;border-radius:8px;">';
+    html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Environment</div>';
+    for (const [k, v] of Object.entries(data.env_configured || {})) {
+      html += '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>' + k + '</span><span style="color:' + (v ? 'var(--green)' : 'var(--red)') + '">' + (v ? 'OK' : 'MISSING') + '</span></div>';
+    }
+    html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Broker: <span style="color:' + (data.broker_connected ? 'var(--green)' : 'var(--red)') + '">' + (data.broker_connected ? 'CONNECTED' : 'OFFLINE') + '</span></div>';
+    html += '</div>';
+    // Modules
+    html += '<div style="background:var(--bg-hover);padding:12px;border-radius:8px;">';
+    html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Modules (9 FP)</div>';
+    for (const [k, v] of Object.entries(data.modules || {})) {
+      html += '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>' + k + '</span><span style="color:' + (v ? 'var(--green)' : 'var(--red)') + '">' + (v ? 'OK' : 'FAIL') + '</span></div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    // Config
+    html += '<div style="background:var(--bg-hover);padding:12px;border-radius:8px;">';
+    html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Trading Config</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+    for (const [k, v] of Object.entries(data.config || {})) {
+      html += '<div>' + k + ': <b>' + v + '</b></div>';
+    }
+    html += '</div></div>';
+    html += '<div style="margin-top:12px;color:var(--text-muted);font-size:11px;">Scheduler: ' + (data.scheduler_running ? 'ON' : 'OFF') + ' | Scans: ' + (data.scan_count || 0) + '</div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
 }
 
 async function loadRisk() {
@@ -653,8 +833,10 @@ async function loadRisk() {
 // Auto refresh
 loadData();
 loadRisk();
+loadDiagnostics();
 setInterval(loadData, 30000);
 setInterval(loadRisk, 60000);
+setInterval(loadDiagnostics, 60000);
 </script>
 </body>
 </html>

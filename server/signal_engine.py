@@ -48,8 +48,8 @@ class Signal:
         self.alpha_estimate = alpha_estimate  # Beklenen günlük alpha
         self.metadata = metadata or {}
 
-    def is_valid(self, p_threshold: float = 0.01) -> bool:
-        """Sinyal p < threshold mı?"""
+    def is_valid(self, p_threshold: float = 0.05) -> bool:
+        """Sinyal p < threshold mi? Default 0.05 (production setting)."""
         return self.p_value < p_threshold
 
     def to_dict(self):
@@ -62,7 +62,7 @@ class Signal:
             "p_value": round(self.p_value, 6),
             "holding_period": self.holding_period,
             "alpha_estimate": round(self.alpha_estimate, 6),
-            "valid": self.is_valid(),
+            "valid": self.is_valid(0.05),
             "metadata": self.metadata,
         }
 

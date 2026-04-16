@@ -737,9 +737,12 @@ async def api_portfolio_optimize(method: str = "market_neutral"):
         return {"error": "portfolio module not loaded"}
 
     signals = _last_scan.get("signals", [])
-    valid_signals = [s for s in signals if s.get("valid")]
+    # Engine'in p_threshold (0.05) ile filtrele, is_valid()'in default 0.01 degil
+    valid_signals = [s for s in signals if s.get("p_value", 1.0) < P_VALUE_THRESHOLD
+                     and s.get("conviction", 0) >= MIN_CONVICTION]
     if not valid_signals:
-        return {"error": "no valid signals -- run scan first", "signals_count": 0}
+        return {"error": "no valid signals -- run scan first", "signals_count": len(signals),
+                "threshold": {"p": P_VALUE_THRESHOLD, "conviction": MIN_CONVICTION}}
 
     result = optimize_portfolio(valid_signals, method=method,
                                   max_weight=0.05, target_gross_leverage=1.0)
