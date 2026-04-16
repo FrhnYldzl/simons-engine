@@ -846,6 +846,20 @@ async def account():
     return _get_account_data()
 
 
+@app.get("/api/portfolio/history")
+async def portfolio_history(period: str = "1D"):
+    """
+    Alpaca portfolio history -- Chart.js icin kullanilir.
+    period: 1D, 1W, 1M, 3M, 1A, all
+    """
+    if not broker:
+        return {"error": "broker not available"}
+    try:
+        return broker.get_portfolio_history(period=period)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/positions")
 async def positions():
     if broker:

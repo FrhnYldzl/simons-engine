@@ -6,6 +6,7 @@
 <title>Simons Engine — Quantitative Trading</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root {
   --bg-primary: #f8f9fb;
@@ -73,6 +74,14 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
   letter-spacing:1px;
 }
 .scan-btn:hover { opacity:0.85; }
+
+.chart-period-btn {
+  background:transparent; color:var(--text-muted); border:1px solid var(--border);
+  padding:4px 12px; border-radius:6px; font-family:var(--font-mono); font-size:11px;
+  font-weight:600; cursor:pointer; transition:all 0.15s;
+}
+.chart-period-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
+.chart-period-btn.active { background:var(--gold); color:#fff; border-color:var(--gold); }
 
 .content { padding:24px; }
 
@@ -255,6 +264,31 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
           <div class="stat-card">
             <div class="stat-label">Valid Signals</div>
             <div class="stat-value" id="statSignals" style="color:var(--gold);">--</div>
+          </div>
+        </div>
+
+        <!-- Portfolio Chart (Alpaca-style) -->
+        <div class="signals-panel" style="padding:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+            <div>
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);">Portfolio Equity</div>
+              <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px;">
+                <div id="chartEquity" style="font-size:28px;font-weight:700;font-family:var(--font-mono);">$--</div>
+                <div id="chartDelta" style="font-size:14px;font-family:var(--font-mono);color:var(--text-muted);">--</div>
+              </div>
+              <div id="chartTimestamp" style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-top:2px;">--</div>
+            </div>
+            <div style="display:flex;gap:4px;" id="periodSelector">
+              <button class="chart-period-btn active" data-period="1D">1D</button>
+              <button class="chart-period-btn" data-period="1W">1W</button>
+              <button class="chart-period-btn" data-period="1M">1M</button>
+              <button class="chart-period-btn" data-period="3M">3M</button>
+              <button class="chart-period-btn" data-period="1A">1Y</button>
+              <button class="chart-period-btn" data-period="all">All</button>
+            </div>
+          </div>
+          <div style="position:relative;height:260px;">
+            <canvas id="equityChart"></canvas>
           </div>
         </div>
 
@@ -854,6 +888,130 @@ async function runOptimize(method) {
   } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
 }
 
+let _equityChart = null;
+let _currentPeriod = '1D';
+
+async function loadEquityChart(period) {
+  try {
+    _currentPeriod = period || _currentPeriod;
+    const res = await fetch('/api/portfolio/history?period=' + _currentPeriod);
+    const data = await res.json();
+    if (data.error) {
+      console.error('chart error:', data.error);
+      return;
+    }
+
+    const equity = data.equity || [];
+    const timestamps = data.timestamp || [];
+    const baseValue = data.base_value || (equity.length ? equity[0] : 0);
+
+    if (!equity.length) return;
+
+    const lastEquity = equity[equity.length - 1];
+    const delta = lastEquity - baseValue;
+    const deltaPct = baseValue > 0 ? (delta / baseValue * 100) : 0;
+    const deltaColor = delta >= 0 ? 'var(--green)' : 'var(--red)';
+
+    document.getElementById('chartEquity').textContent = '$' + Number(lastEquity).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const deltaEl = document.getElementById('chartDelta');
+    deltaEl.textContent = (delta >= 0 ? '+' : '') + '$' + Math.abs(delta).toFixed(2) + ' (' + (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(2) + '%)';
+    deltaEl.style.color = deltaColor;
+
+    const lastTs = timestamps[timestamps.length - 1];
+    if (lastTs) {
+      const dt = new Date(lastTs * 1000);
+      document.getElementById('chartTimestamp').textContent = dt.toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+    }
+
+    // Chart labels -- format based on period
+    const labels = timestamps.map(ts => {
+      const d = new Date(ts * 1000);
+      if (_currentPeriod === '1D') return d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+      if (_currentPeriod === '1W') return d.toLocaleDateString('en-US', {weekday:'short', hour:'2-digit'});
+      return d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    });
+
+    const chartColor = delta >= 0 ? '#16a34a' : '#dc2626';
+    const fillGradient = delta >= 0 ? 'rgba(22, 163, 74, 0.1)' : 'rgba(220, 38, 38, 0.1)';
+
+    if (_equityChart) {
+      _equityChart.destroy();
+    }
+
+    const ctx = document.getElementById('equityChart').getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+    gradient.addColorStop(0, fillGradient.replace('0.1', '0.3'));
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+
+    _equityChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: equity,
+          borderColor: chartColor,
+          backgroundColor: gradient,
+          borderWidth: 2,
+          tension: 0.1,
+          fill: true,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: chartColor,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: '#0f172a',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            padding: 10,
+            displayColors: false,
+            callbacks: {
+              label: function(ctx) {
+                return '$' + Number(ctx.parsed.y).toLocaleString('en-US', {minimumFractionDigits:2});
+              }
+            }
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#94a3b8', maxTicksLimit: 6, font: {size: 10} },
+          },
+          y: {
+            position: 'right',
+            grid: { color: 'rgba(226, 232, 240, 0.5)', drawBorder: false },
+            ticks: {
+              color: '#94a3b8',
+              font: {size: 10},
+              callback: function(v) { return '$' + (v / 1000).toFixed(0) + 'k'; }
+            },
+          },
+        },
+        interaction: { mode: 'index', intersect: false },
+      }
+    });
+  } catch(e) { console.error('chart fail:', e); }
+}
+
+// Period button handlers
+document.addEventListener('DOMContentLoaded', () => {
+  const btns = document.querySelectorAll('.chart-period-btn');
+  btns.forEach(b => {
+    b.addEventListener('click', () => {
+      btns.forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      loadEquityChart(b.dataset.period);
+    });
+  });
+});
+
 async function loadClaudeStatus() {
   try {
     const s = await fetch('/api/claude/status').then(r => r.json());
@@ -1068,10 +1226,12 @@ loadData();
 loadRisk();
 loadDiagnostics();
 loadClaudeStatus();
+loadEquityChart('1D');
 setInterval(loadData, 30000);
 setInterval(loadRisk, 60000);
 setInterval(loadDiagnostics, 60000);
 setInterval(loadClaudeStatus, 30000);
+setInterval(() => loadEquityChart(), 60000);
 </script>
 </body>
 </html>

@@ -149,6 +149,73 @@ class SimonsBroker:
                 return []
         return []
 
+    def get_portfolio_history(self, period: str = "1D", timeframe: str = None) -> dict:
+        """
+        Alpaca portfolio history -- equity egrisi cizebilmek icin.
+
+        period: "1D", "1W", "1M", "3M", "1A", "all"
+        timeframe: "1Min", "5Min", "15Min", "1H", "1D" (auto based on period if None)
+
+        Returns:
+            {
+                timestamp: [unix_ts_1, unix_ts_2, ...],
+                equity: [val_1, val_2, ...],
+                profit_loss: [...],
+                profit_loss_pct: [...],
+                base_value: float,
+                timeframe: str,
+            }
+        """
+        try:
+            # Auto-pick timeframe based on period
+            if timeframe is None:
+                tf_map = {"1D": "5Min", "1W": "15Min", "1M": "1H",
+                          "3M": "1D", "1A": "1D", "all": "1D"}
+                timeframe = tf_map.get(period, "1H")
+
+            # Alpaca TradingClient uses direct HTTP call for this endpoint
+            # Fallback: raw HTTP via requests
+            import urllib.parse
+            import urllib.request
+            import json as _json
+
+            api_key = _get("ALPACA_API_KEY")
+            secret = _get("ALPACA_SECRET_KEY")
+            base = _get("ALPACA_BASE_URL") or "https://paper-api.alpaca.markets"
+            if not base.endswith("/v2"):
+                base = base.rstrip("/") + "/v2"
+
+            params = urllib.parse.urlencode({
+                "period": period,
+                "timeframe": timeframe,
+                "extended_hours": "true",
+            })
+            url = f"{base}/account/portfolio/history?{params}"
+
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "APCA-API-KEY-ID": api_key,
+                    "APCA-API-SECRET-KEY": secret,
+                },
+            )
+
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+
+            return {
+                "timestamp": data.get("timestamp", []),
+                "equity": data.get("equity", []),
+                "profit_loss": data.get("profit_loss", []),
+                "profit_loss_pct": data.get("profit_loss_pct", []),
+                "base_value": data.get("base_value", 0),
+                "timeframe": data.get("timeframe", timeframe),
+                "period": period,
+            }
+        except Exception as e:
+            return {"error": str(e), "period": period}
+
+
     def get_snapshot(self, ticker: str) -> dict:
         """Anlık fiyat verisi."""
         try:
