@@ -124,6 +124,50 @@ class ClaudeOperator:
         cost = (input_tokens / 1_000_000) * prices["input"] + (output_tokens / 1_000_000) * prices["output"]
         return cost
 
+    def _direct_rest_call(self, system: str, user_msg: str) -> dict:
+        """
+        Anthropic SDK bypass -- direct REST with urllib (no httpx).
+        Railway IPv6 / httpx bug workaround.
+        """
+        import urllib.request
+        import urllib.error
+        import json as _json
+        import socket
+
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+        body = _json.dumps({
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user_msg}],
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            method="POST",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+        )
+
+        # Force IPv4 resolution
+        _original_getaddrinfo = socket.getaddrinfo
+        def _ipv4_only(host, port, family=0, type_=0, proto=0, flags=0):
+            return _original_getaddrinfo(host, port, socket.AF_INET, type_, proto, flags)
+        socket.getaddrinfo = _ipv4_only
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            return data
+        finally:
+            socket.getaddrinfo = _original_getaddrinfo
+
+
     def decide(self, system_prompt: str, context: dict, pending: list = None) -> dict:
         """
         Claude'u cagir, karar iste.
@@ -199,24 +243,27 @@ Sadece JSON. Disiplin kurallarina uy. Riskli pozisyon onerme.
             self.call_count_today += 1
             self.last_call_at = datetime.now(timezone.utc).isoformat()
 
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_msg}],
-            )
+            # Use direct REST (urllib) with forced IPv4 -- Railway httpx bug bypass
+            data = self._direct_rest_call(system_prompt, user_msg)
 
-            # Token usage
-            in_tok = response.usage.input_tokens
-            out_tok = response.usage.output_tokens
+            # Token usage (Anthropic response format)
+            usage = data.get("usage", {})
+            in_tok = usage.get("input_tokens", 0)
+            out_tok = usage.get("output_tokens", 0)
             cost = self._compute_cost(in_tok, out_tok)
 
             self.daily_input_tokens += in_tok
             self.daily_output_tokens += out_tok
             self.daily_cost_usd += cost
 
-            # Parse response
-            text = response.content[0].text if response.content else ""
+            # Parse response (content: [{type: "text", text: "..."}])
+            content = data.get("content", [])
+            text = ""
+            if content and isinstance(content, list):
+                for block in content:
+                    if block.get("type") == "text":
+                        text = block.get("text", "")
+                        break
             self.last_response = text[:500]
 
             # Extract JSON

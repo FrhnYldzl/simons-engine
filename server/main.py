@@ -1358,7 +1358,7 @@ async def claude_debug():
         from anthropic import Anthropic
         c = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
         resp = c.messages.create(
-            model="claude-haiku-4-5-20251001",  # cheapest for test
+            model="claude-haiku-4-5-20251001",
             max_tokens=10,
             messages=[{"role": "user", "content": "say hi"}],
         )
@@ -1367,7 +1367,22 @@ async def claude_debug():
     except Exception as e:
         result["sdk_call_ok"] = False
         result["sdk_call_error"] = f"{type(e).__name__}: {str(e)[:300]}"
-        result["sdk_call_traceback"] = traceback.format_exc()[:1000]
+
+    # Test 4: Direct REST (urllib + IPv4 force) -- our workaround
+    try:
+        if CLAUDE_OK:
+            from claude_operator import get_operator
+            op = get_operator()
+            data = op._direct_rest_call(
+                system="You are helpful. Respond with one word.",
+                user_msg="Say hi",
+            )
+            result["direct_rest_ok"] = True
+            result["direct_rest_usage"] = data.get("usage", {})
+            result["direct_rest_response"] = str(data.get("content", ""))[:200]
+    except Exception as e:
+        result["direct_rest_ok"] = False
+        result["direct_rest_error"] = f"{type(e).__name__}: {str(e)[:300]}"
 
     return result
 
