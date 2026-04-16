@@ -63,6 +63,45 @@ except Exception as e:
     KELLY_OK = False
     print(f"[Boot] kelly_engine FAIL: {e}")
 
+# New modules (Phase 9+)
+try:
+    from backtest_engine import (
+        run_backtest, compute_performance_metrics, deflated_sharpe_ratio,
+        monte_carlo_stress_test, validate_signal,
+        mean_reversion_signal, momentum_signal,
+    )
+    BACKTEST_OK = True
+    print("[Boot] backtest_engine OK")
+except Exception as e:
+    BACKTEST_OK = False
+    print(f"[Boot] backtest_engine FAIL: {e}")
+
+try:
+    from portfolio_optimizer import (
+        optimize_portfolio, compute_factor_exposures, apply_turnover_penalty,
+    )
+    PORTFOLIO_OK = True
+    print("[Boot] portfolio_optimizer OK")
+except Exception as e:
+    PORTFOLIO_OK = False
+    print(f"[Boot] portfolio_optimizer FAIL: {e}")
+
+try:
+    from kernel_engine import kernel_predict, svr_signal, kernel_pca_features
+    KERNEL_OK = True
+    print("[Boot] kernel_engine OK")
+except Exception as e:
+    KERNEL_OK = False
+    print(f"[Boot] kernel_engine FAIL: {e}")
+
+try:
+    from nlp_engine import score_text, score_multiple_texts, ticker_news_sentiment
+    NLP_OK = True
+    print("[Boot] nlp_engine OK")
+except Exception as e:
+    NLP_OK = False
+    print(f"[Boot] nlp_engine FAIL: {e}")
+
 try:
     import numpy as np
     print("[Boot] numpy OK")
@@ -80,9 +119,9 @@ except Exception as e:
     print(f"[Boot] apscheduler FAIL: {e}")
 
 # ─── Version ──────────────────────────────────────────
-VERSION = "1.5.1"
-PHASE = 6
-PHASE_NAME = "Autonomous Scheduler"
+VERSION = "2.0.0"
+PHASE = 9
+PHASE_NAME = "Full FP-01..09 Modules"
 
 # ─── Universe ─────────────────────────────────────────
 UNIVERSE = [
@@ -634,6 +673,8 @@ async def diagnostics():
         "modules": {
             "db": DB_OK, "pipeline": PIPELINE_OK, "hmm": HMM_OK,
             "signals": SIGNAL_OK, "kelly": KELLY_OK, "scheduler": SCHED_OK,
+            "backtest": BACKTEST_OK, "portfolio": PORTFOLIO_OK,
+            "kernel": KERNEL_OK, "nlp": NLP_OK,
         },
         "config": {
             "p_threshold": P_VALUE_THRESHOLD,
@@ -648,3 +689,111 @@ async def diagnostics():
         "scheduler_running": _scheduler.running if _scheduler else False,
         "scan_count": _scan_count,
     }
+
+
+# ─── FP-09 Backtesting API ────────────────────────────
+@app.get("/api/backtest/{strategy}")
+async def api_backtest(strategy: str = "mean_reversion"):
+    """Run backtest for a given strategy against cached data."""
+    if not BACKTEST_OK:
+        return {"error": "backtest module not loaded"}
+    if not _cached_data:
+        return {"error": "no data cached -- run /api/scan-now first"}
+
+    strategies = {
+        "mean_reversion": mean_reversion_signal,
+        "momentum": momentum_signal,
+    }
+    fn = strategies.get(strategy)
+    if not fn:
+        return {"error": f"unknown strategy: {strategy}", "available": list(strategies.keys())}
+
+    result = run_backtest(_cached_data, fn)
+    return result
+
+
+@app.get("/api/validate/{strategy}")
+async def api_validate(strategy: str = "mean_reversion"):
+    """Run full validation (backtest + DSR + verdict)."""
+    if not BACKTEST_OK or not _cached_data:
+        return {"error": "backtest not available or no cached data"}
+
+    strategies = {
+        "mean_reversion": mean_reversion_signal,
+        "momentum": momentum_signal,
+    }
+    fn = strategies.get(strategy)
+    if not fn:
+        return {"error": f"unknown strategy: {strategy}"}
+
+    return validate_signal(fn, _cached_data)
+
+
+# ─── FP-07 Portfolio API ──────────────────────────────
+@app.get("/api/portfolio/optimize")
+async def api_portfolio_optimize(method: str = "market_neutral"):
+    """Run portfolio optimization on last scan's signals."""
+    if not PORTFOLIO_OK:
+        return {"error": "portfolio module not loaded"}
+
+    signals = _last_scan.get("signals", [])
+    valid_signals = [s for s in signals if s.get("valid")]
+    if not valid_signals:
+        return {"error": "no valid signals -- run scan first", "signals_count": 0}
+
+    result = optimize_portfolio(valid_signals, method=method,
+                                  max_weight=0.05, target_gross_leverage=1.0)
+
+    # Factor exposures
+    if _cached_data:
+        try:
+            exposures = compute_factor_exposures(result.get("weights", {}), _cached_data)
+            result["factor_exposures"] = exposures
+        except Exception as e:
+            result["factor_exposures_error"] = str(e)
+
+    return result
+
+
+# ─── FP-04 Kernel API ─────────────────────────────────
+@app.get("/api/kernel/predict/{ticker}")
+async def api_kernel_predict(ticker: str, kernel: str = "rbf"):
+    """Kernel regression prediction for a ticker."""
+    if not KERNEL_OK:
+        return {"error": "kernel module not loaded"}
+    if not _cached_data or ticker not in _cached_data:
+        return {"error": f"ticker {ticker} not in cached data"}
+    return kernel_predict(_cached_data[ticker], kernel=kernel)
+
+
+@app.get("/api/kernel/embeddings")
+async def api_kernel_embeddings():
+    """Cross-asset KernelPCA embeddings."""
+    if not KERNEL_OK:
+        return {"error": "kernel module not loaded"}
+    if not _cached_data:
+        return {"error": "no cached data"}
+    return {"embeddings": kernel_pca_features(_cached_data, n_components=3)}
+
+
+# ─── FP-08 NLP API ────────────────────────────────────
+@app.post("/api/nlp/score")
+async def api_nlp_score(payload: dict):
+    """Score text with financial sentiment dictionary."""
+    if not NLP_OK:
+        return {"error": "nlp module not loaded"}
+    text = payload.get("text", "")
+    if not text:
+        return {"error": "text required"}
+    return score_text(text)
+
+
+@app.post("/api/nlp/batch")
+async def api_nlp_batch(payload: dict):
+    """Score multiple texts (headlines, news feed)."""
+    if not NLP_OK:
+        return {"error": "nlp module not loaded"}
+    texts = payload.get("texts", [])
+    if not texts:
+        return {"error": "texts array required"}
+    return score_multiple_texts(texts)
