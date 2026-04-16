@@ -1324,6 +1324,54 @@ async def training_export(limit: int = 1000):
     }
 
 
+@app.get("/api/claude/debug")
+async def claude_debug():
+    """Network + key teshisi. Anthropic'e dogrudan baglan."""
+    import traceback
+    result = {
+        "env_var_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "env_var_length": len(os.getenv("ANTHROPIC_API_KEY", "")),
+        "env_var_prefix": os.getenv("ANTHROPIC_API_KEY", "")[:12],
+    }
+
+    # Test 1: httpx direct ping
+    try:
+        import httpx
+        r = httpx.get("https://api.anthropic.com", timeout=10)
+        result["httpx_anthropic_status"] = r.status_code
+        result["httpx_anthropic_ok"] = True
+    except Exception as e:
+        result["httpx_anthropic_ok"] = False
+        result["httpx_anthropic_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+
+    # Test 2: SDK client init
+    try:
+        from anthropic import Anthropic
+        c = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        result["sdk_init_ok"] = True
+    except Exception as e:
+        result["sdk_init_ok"] = False
+        result["sdk_init_error"] = str(e)[:200]
+
+    # Test 3: SDK minimal call
+    try:
+        from anthropic import Anthropic
+        c = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        resp = c.messages.create(
+            model="claude-haiku-4-5-20251001",  # cheapest for test
+            max_tokens=10,
+            messages=[{"role": "user", "content": "say hi"}],
+        )
+        result["sdk_call_ok"] = True
+        result["sdk_call_tokens"] = resp.usage.input_tokens + resp.usage.output_tokens
+    except Exception as e:
+        result["sdk_call_ok"] = False
+        result["sdk_call_error"] = f"{type(e).__name__}: {str(e)[:300]}"
+        result["sdk_call_traceback"] = traceback.format_exc()[:1000]
+
+    return result
+
+
 @app.get("/api/claude/status")
 async def claude_status():
     """Claude operator canlı durumu: availability, token usage, cost."""
