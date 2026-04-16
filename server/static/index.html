@@ -495,20 +495,38 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
       <!-- ABOUT -->
       <div id="section-about" class="section-content">
         <div style="max-width:800px;">
-          <!-- Hero -->
-          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:32px;margin-bottom:24px;display:flex;gap:28px;align-items:center;">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Jim_Simons_at_Induction.jpg/440px-Jim_Simons_at_Induction.jpg"
-                 alt="Jim Simons" style="width:140px;height:140px;border-radius:12px;object-fit:cover;border:3px solid var(--gold);flex-shrink:0;">
-            <div>
-              <h2 style="font-size:22px;font-weight:700;margin-bottom:4px;">Jim Simons</h2>
-              <p style="font-size:13px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:10px;">1938 - 2024 &middot; Mathematician &middot; Codebreaker &middot; Investor</p>
+          <!-- Hero (gorsel -> arkaplanli banner) -->
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            <div id="jimSimonsBanner" style="position:relative;height:240px;background:#edebe0 url('/static/jim_simons.jpg') no-repeat center;background-size:cover;">
+              <div style="position:absolute;inset:0;background:linear-gradient(to right, rgba(237,235,224,0) 40%, rgba(237,235,224,0.9) 100%);"></div>
+              <div style="position:absolute;right:24px;top:50%;transform:translateY(-50%);text-align:right;max-width:320px;">
+                <h2 style="font-size:28px;font-weight:700;color:#1a1a1a;margin-bottom:2px;letter-spacing:-0.5px;">Jim Simons</h2>
+                <p style="font-size:12px;color:#555;font-family:var(--font-mono);letter-spacing:1px;text-transform:uppercase;">1938 - 2024</p>
+                <p style="font-size:11px;color:#333;font-family:var(--font-mono);margin-top:6px;">Mathematician &middot; Codebreaker &middot; Investor</p>
+              </div>
+            </div>
+            <div style="padding:24px 32px;">
               <p style="font-size:14px;color:var(--text-secondary);line-height:1.6;">
-                The man who solved the market. MIT'den 20 yasinda mezun, 23 yasinda Berkeley'den doktora, NSA'da sifre kirici,
-                Stony Brook'ta matematik profesoru ve Renaissance Technologies'in kurucusu.
-                Medallion Fund ile tarihin en basarili yatirim fonunu yaratti.
+                <strong>The man who solved the market.</strong> MIT'den 20 yasinda mezun, 23 yasinda Berkeley'den doktora,
+                NSA'da sifre kirici, Stony Brook'ta matematik profesoru ve Renaissance Technologies'in kurucusu.
+                Medallion Fund ile tarihin en basarili yatirim fonunu yaratti (%66 brut yillik getiri, 1988-2018).
               </p>
             </div>
           </div>
+          <script>
+          // Jim Simons resmi yoksa gradient fallback
+          (function(){
+            const img = new Image();
+            img.onerror = function() {
+              const banner = document.getElementById('jimSimonsBanner');
+              if (banner) {
+                banner.style.background = 'linear-gradient(135deg, #edebe0 0%, #f5e6b3 50%, #d4a50a 100%)';
+                banner.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:120px;font-weight:900;color:rgba(26,26,26,0.15);font-family:var(--font-mono);letter-spacing:-5px;">JIM SIMONS</div>' + banner.innerHTML.match(/<div[^>]*style="position:absolute;right[^"]*"[^>]*>[\s\S]*?<\/div>/)[0];
+              }
+            };
+            img.src = '/static/jim_simons.jpg';
+          })();
+          </script>
 
           <!-- Stats -->
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
