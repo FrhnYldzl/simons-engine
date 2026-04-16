@@ -24,6 +24,9 @@ try:
         init_db, log_trade, log_signal, log_regime, log_scan,
         log_daily_performance, get_recent_trades, get_daily_performance,
         get_regime_history, get_trade_count_today,
+        log_ai_decision, approve_ai_decision, reject_ai_decision,
+        record_ai_outcome, get_pending_decisions, get_all_decisions,
+        log_ai_analysis, export_training_data,
     )
     DB_OK = True
     print("[Boot] database OK")
@@ -149,7 +152,10 @@ _signal_engine = SignalEngine(p_threshold=P_VALUE_THRESHOLD) if SIGNAL_OK else N
 _kelly_engine = KellyEngine() if KELLY_OK else None
 _cached_data = {}
 _scheduler = BackgroundScheduler(timezone="UTC") if SCHED_OK else None
-_auto_execute = True
+# AI-in-the-loop: engine artik trade yapmaz, sadece oneride bulunur.
+# AI (Claude veya baska model) /api/agent/* endpoint'leri ile
+# kararlari onaylayinca trade yapilir.
+_auto_execute = False  # FAZ 16: Engine auto-trade KAPALI (AI kontrolu)
 _scan_count = 0
 _reject_log = []  # Son scan'de reddedilen sinyaller (debug icin)
 
@@ -800,3 +806,299 @@ async def api_nlp_batch(payload: dict):
     if not texts:
         return {"error": "texts array required"}
     return score_multiple_texts(texts)
+
+
+# ═══════════════════════════════════════════════════════
+# FAZ 16-20: AI AGENT INTERFACE (Claude AI icin tool)
+# ═══════════════════════════════════════════════════════
+
+@app.get("/api/agent/prompt")
+async def agent_prompt():
+    """Jim Simmons Brain Operator system prompt -- Claude session baslatinca yukle."""
+    try:
+        from operator_prompt import get_operator_prompt, get_daily_playbook, get_decision_template
+        return {
+            "system_prompt": get_operator_prompt(),
+            "daily_playbook": get_daily_playbook(),
+            "decision_template": get_decision_template(),
+            "version": VERSION,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/agent/context")
+async def agent_context():
+    """
+    AI icin komple market context ozeti.
+    Claude bu endpoint'ten piyasa durumunu alir ve karar verir.
+    """
+    acc = _get_account_data()
+    market_open = _is_market_open()
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "market_status": "open" if market_open else "closed",
+        "regime": _last_scan.get("regime", {}),
+        "portfolio": {
+            "equity": acc.get("equity", 0),
+            "cash": acc.get("cash", 0),
+            "buying_power": acc.get("buying_power", 0),
+            "positions": acc.get("positions", []),
+            "n_positions": acc.get("n_positions", 0),
+        },
+        "signals": _last_scan.get("signals", []),
+        "valid_signal_count": _last_scan.get("valid_signal_count", 0),
+        "risk_status": _last_scan.get("risk_status", {}),
+        "rejects": _last_scan.get("rejects", []),
+        "last_scan": _last_scan.get("timestamp"),
+        "config": {
+            "p_threshold": P_VALUE_THRESHOLD,
+            "min_conviction": MIN_CONVICTION,
+            "min_position_value": MIN_POSITION_VALUE,
+            "max_position_pct": 5.0,
+            "max_daily_trades": MAX_DAILY_TRADES,
+        },
+        "trades_today": get_trade_count_today() if DB_OK else 0,
+        "auto_execute": _auto_execute,
+        "instruction": (
+            "Bu Simons Engine'in current state'idir. Medallion Fund metodlariyla "
+            "calisiyor: HMM regime, StatArb signals (p<0.05), Kelly sizing, market "
+            "neutral portfolio. Sen karar verici AI'sin. /api/agent/propose-trade ile "
+            "trade onerirsin; /api/agent/approve ile onaylarsin. Saf matematik + senin "
+            "yargilarin beraber. Risk oncelikli."
+        ),
+    }
+
+
+@app.post("/api/agent/propose-trade")
+async def agent_propose_trade(payload: dict):
+    """
+    AI trade oneriyor. Karar pending'e dusser; onay bekler.
+
+    Body: {
+        ai_model: "claude-opus-4-6",
+        reasoning: "Long NVDA because...",
+        ticker: "NVDA",
+        side: "buy",
+        qty: 10,
+        price: 150.0,  # optional (current market)
+        conviction: 0.7
+    }
+
+    Returns: {decision_id, status: "pending"}
+    """
+    if not DB_OK:
+        return {"error": "db not available"}
+
+    ai_model = payload.get("ai_model", "unknown")
+    reasoning = payload.get("reasoning", "")
+    ticker = payload.get("ticker", "").upper()
+    side = payload.get("side", "buy").lower()
+    qty = int(payload.get("qty", 0))
+    price = float(payload.get("price", 0))
+    conviction = float(payload.get("conviction", 0.5))
+
+    if not ticker or qty <= 0:
+        return {"error": "ticker and qty required"}
+
+    # Current context snapshot
+    context = {
+        "regime": _last_scan.get("regime", {}).get("regime", "unknown"),
+        "market_open": _is_market_open(),
+        "equity": _get_account_data().get("equity", 0),
+    }
+
+    decision_id = log_ai_decision(
+        ai_model=ai_model,
+        context_snapshot=context,
+        reasoning=reasoning,
+        decision_type="propose_trade",
+        decision_detail=payload,
+        ticker=ticker, side=side, qty=qty, price=price, conviction=conviction,
+    )
+
+    return {
+        "decision_id": decision_id,
+        "status": "pending",
+        "message": f"Trade proposal logged. Call /api/agent/approve/{decision_id} to execute.",
+    }
+
+
+@app.post("/api/agent/approve/{decision_id}")
+async def agent_approve(decision_id: int, payload: dict = None):
+    """
+    AI (veya human) pending kararı onayliyor. Trade gerceklesir.
+
+    Body (optional): {approved_by: "claude-opus-4-6", override_qty: 10}
+    """
+    if not DB_OK or not broker:
+        return {"error": "db or broker not available"}
+
+    payload = payload or {}
+    approved_by = payload.get("approved_by", "system")
+
+    # Pending decision'i al
+    decisions = get_all_decisions(limit=100, status="pending")
+    decision = next((d for d in decisions if d["id"] == decision_id), None)
+    if not decision:
+        return {"error": f"decision_id {decision_id} not found or not pending"}
+
+    ticker = decision["ticker"]
+    side = decision["side"]
+    qty = int(payload.get("override_qty") or decision["qty"])
+
+    if qty <= 0:
+        reject_ai_decision(decision_id, approved_by, "qty is zero")
+        return {"error": "qty is zero"}
+
+    # Market kontrol
+    if not _is_market_open():
+        # Piyasa kapali -- trade gonderilir ama open'da execute olur
+        pass
+
+    # Execute
+    try:
+        result = broker.execute_market(ticker, qty, side)
+        if result.get("status") == "submitted":
+            # Trade'i DB'ye yaz
+            trade_id = log_trade(
+                ticker=ticker, side=side, qty=qty, price=decision["price"],
+                signal_name=f"ai_approved_{approved_by}",
+                signal_direction=1.0 if side == "buy" else -1.0,
+                signal_conviction=decision["conviction"],
+                signal_p_value=0.0,  # AI decision, not signal-based
+                kelly_f=0,
+                regime=_last_scan.get("regime", {}).get("regime", "unknown"),
+                stop_loss=0,
+            )
+            # Decision'i approve et
+            approve_ai_decision(decision_id, approved_by, trade_id)
+
+            return {
+                "status": "executed",
+                "decision_id": decision_id,
+                "trade_id": trade_id,
+                "order_id": result.get("order_id", ""),
+                "ticker": ticker, "side": side, "qty": qty,
+            }
+        else:
+            reject_ai_decision(decision_id, approved_by,
+                               f"broker rejected: {result.get('message', 'unknown')}")
+            return {"error": "broker rejected", "detail": result}
+    except Exception as e:
+        reject_ai_decision(decision_id, approved_by, f"exception: {str(e)}")
+        return {"error": str(e)}
+
+
+@app.post("/api/agent/reject/{decision_id}")
+async def agent_reject(decision_id: int, payload: dict = None):
+    """AI veya human pending kararı reddediyor."""
+    if not DB_OK:
+        return {"error": "db not available"}
+    payload = payload or {}
+    rejected_by = payload.get("rejected_by", "system")
+    reason = payload.get("reason", "manual rejection")
+
+    reject_ai_decision(decision_id, rejected_by, reason)
+    return {"status": "rejected", "decision_id": decision_id, "reason": reason}
+
+
+@app.get("/api/agent/pending")
+async def agent_pending():
+    """Onay bekleyen AI kararlari."""
+    if not DB_OK:
+        return []
+    return get_pending_decisions(limit=50)
+
+
+@app.get("/api/agent/decisions")
+async def agent_decisions(limit: int = 100, status: str = None):
+    """Tum AI kararlari (history)."""
+    if not DB_OK:
+        return []
+    return get_all_decisions(limit=limit, status=status)
+
+
+@app.post("/api/agent/record-outcome/{decision_id}")
+async def agent_record_outcome(decision_id: int, payload: dict):
+    """
+    AI kararinin outcome'unu kaydet (pozisyon kapandiktan sonra).
+
+    Body: {pnl: 250.50, label: "win"}  # label: win|loss|flat
+    """
+    if not DB_OK:
+        return {"error": "db not available"}
+    pnl = float(payload.get("pnl", 0))
+    label = payload.get("label", "flat")
+    record_ai_outcome(decision_id, pnl, label)
+    return {"status": "recorded", "decision_id": decision_id, "pnl": pnl, "label": label}
+
+
+@app.post("/api/agent/log-analysis")
+async def agent_log_analysis(payload: dict):
+    """
+    AI analizi logla (training data icin).
+
+    Body: {ai_model, analysis_type, ticker, input_context, output_reasoning, output_verdict, tokens_used}
+    """
+    if not DB_OK:
+        return {"error": "db not available"}
+
+    analysis_id = log_ai_analysis(
+        ai_model=payload.get("ai_model", "unknown"),
+        analysis_type=payload.get("analysis_type", "generic"),
+        ticker=payload.get("ticker", ""),
+        input_context=payload.get("input_context", {}),
+        output_reasoning=payload.get("output_reasoning", ""),
+        output_verdict=payload.get("output_verdict", ""),
+        tokens_used=payload.get("tokens_used", 0),
+    )
+    return {"analysis_id": analysis_id, "status": "logged"}
+
+
+@app.get("/api/training/export")
+async def training_export(limit: int = 1000):
+    """
+    Training data export (JSONL-ready).
+    Sadece outcome'u kaydedilmis kararlar.
+    """
+    if not DB_OK:
+        return {"error": "db not available"}
+    data = export_training_data(limit=limit)
+    return {
+        "n_samples": len(data),
+        "format": "jsonl-ready",
+        "samples": data,
+    }
+
+
+@app.get("/api/agent/stats")
+async def agent_stats():
+    """AI performans istatistikleri."""
+    if not DB_OK:
+        return {"error": "db not available"}
+
+    all_decisions = get_all_decisions(limit=10000)
+    pending = sum(1 for d in all_decisions if d["status"] == "pending")
+    approved = sum(1 for d in all_decisions if d["status"] == "approved")
+    rejected = sum(1 for d in all_decisions if d["status"] == "rejected")
+
+    # Outcome stats (feedback)
+    with_outcome = [d for d in all_decisions if d.get("outcome_pnl") is not None]
+    wins = sum(1 for d in with_outcome if (d.get("outcome_pnl") or 0) > 0)
+    losses = sum(1 for d in with_outcome if (d.get("outcome_pnl") or 0) < 0)
+    total_pnl = sum(d.get("outcome_pnl", 0) or 0 for d in with_outcome)
+
+    return {
+        "total_decisions": len(all_decisions),
+        "pending": pending,
+        "approved": approved,
+        "rejected": rejected,
+        "with_outcome": len(with_outcome),
+        "wins": wins,
+        "losses": losses,
+        "win_rate_pct": round(wins / len(with_outcome) * 100, 2) if with_outcome else 0,
+        "total_pnl": round(total_pnl, 2),
+        "avg_pnl_per_trade": round(total_pnl / len(with_outcome), 2) if with_outcome else 0,
+    }

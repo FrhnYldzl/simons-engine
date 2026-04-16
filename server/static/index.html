@@ -193,6 +193,15 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
       </div>
     </div>
     <div class="sidebar-section">
+      <div class="sidebar-section-title">AI Operator</div>
+      <div class="nav-item" onclick="showSection('aidecisions')">
+        <span class="nav-icon">A</span> AI Decisions
+      </div>
+      <div class="nav-item" onclick="showSection('training')">
+        <span class="nav-icon">E</span> Training Data
+      </div>
+    </div>
+    <div class="sidebar-section">
       <div class="sidebar-section-title">System</div>
       <div class="nav-item" onclick="showSection('diagnostics')">
         <span class="nav-icon">D</span> Diagnostics
@@ -382,6 +391,45 @@ body { background:var(--bg-primary); color:var(--text-primary); font-family:var(
         <div class="signals-panel">
           <div class="regime-title">System Diagnostics</div>
           <div id="diagnosticsResult" style="font-family:var(--font-mono);font-size:12px;">Yukleniyor...</div>
+        </div>
+      </div>
+
+      <!-- AI DECISIONS -->
+      <div id="section-aidecisions" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">AI Operator Decisions</div>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">
+            Claude AI Operator'un verdigi tum trade kararlari + reasoning + outcome.
+            Engine auto-trade yapmaz -- sadece AI onaylarsa trade gercek.
+          </p>
+          <div id="aiStatsBar" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+            <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="aiStatTotal" style="font-size:18px;">--</div></div>
+            <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="aiStatPending" style="font-size:18px;color:var(--orange);">--</div></div>
+            <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="aiStatWinRate" style="font-size:18px;color:var(--green);">--</div></div>
+            <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-value" id="aiStatPnL" style="font-size:18px;">--</div></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="scan-btn" onclick="loadAIDecisions()">Refresh</button>
+            <button class="scan-btn" onclick="loadAIDecisions('pending')">Pending Only</button>
+            <button class="scan-btn" onclick="loadAIDecisions('approved')">Approved</button>
+          </div>
+          <div id="aiDecisionsList">Yukleniyor...</div>
+        </div>
+      </div>
+
+      <!-- TRAINING DATA -->
+      <div id="section-training" class="section-content">
+        <div class="signals-panel">
+          <div class="regime-title">Training Data Export</div>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">
+            Outcome'u kaydedilmis AI kararlari. JSONL formatinda export edilip
+            fine-tuning icin kullanilabilir.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="scan-btn" onclick="loadTrainingData()">Load Samples</button>
+            <button class="scan-btn" onclick="downloadTrainingJSONL()">Download JSONL</button>
+          </div>
+          <div id="trainingResult" style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);">Hazir.</div>
         </div>
       </div>
 
@@ -779,6 +827,110 @@ async function runOptimize(method) {
       '</div>' +
       '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px;"><div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Weights</div>' + weightsHtml + '</div>';
   } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function loadAIDecisions(filterStatus) {
+  const el = document.getElementById('aiDecisionsList');
+  el.innerHTML = 'Yukleniyor...';
+  try {
+    // Stats
+    const stats = await fetch('/api/agent/stats').then(r => r.json());
+    document.getElementById('aiStatTotal').textContent = stats.total_decisions || 0;
+    document.getElementById('aiStatPending').textContent = stats.pending || 0;
+    document.getElementById('aiStatWinRate').textContent = (stats.win_rate_pct || 0).toFixed(1) + '%';
+    const pnl = stats.total_pnl || 0;
+    document.getElementById('aiStatPnL').textContent = '$' + Number(pnl).toFixed(2);
+    document.getElementById('aiStatPnL').style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+    // List
+    const url = filterStatus ? '/api/agent/decisions?status=' + filterStatus : '/api/agent/decisions';
+    const list = await fetch(url).then(r => r.json());
+    if (!list.length) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Henuz AI karari yok. Claude Operator baslatilinca dolacak.</div>';
+      return;
+    }
+    let html = '';
+    for (const d of list.slice(0, 20)) {
+      const statusColor = d.status === 'approved' ? 'var(--green)' :
+                          d.status === 'rejected' ? 'var(--red)' : 'var(--orange)';
+      const pnlColor = (d.outcome_pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+      html += '<div class="signal-card" style="flex-direction:column;align-items:flex-start;">';
+      html += '<div style="display:flex;align-items:center;gap:12px;width:100%;margin-bottom:6px;">';
+      html += '<div class="signal-ticker">' + (d.ticker || '--') + '</div>';
+      html += '<div style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:' + statusColor + '22;color:' + statusColor + ';text-transform:uppercase;">' + d.status + '</div>';
+      html += '<div style="font-size:11px;color:var(--text-muted);">' + (d.decision_type || '') + ' | ' + (d.side || '') + ' x' + (d.qty || 0) + '</div>';
+      html += '<div style="margin-left:auto;font-size:10px;color:var(--text-muted);">' + (d.timestamp || '').slice(0,16).replace('T', ' ') + '</div>';
+      html += '</div>';
+      html += '<div style="font-size:11px;color:var(--text-secondary);width:100%;margin-top:4px;">' + (d.reasoning || '(no reasoning)').slice(0, 250) + (d.reasoning && d.reasoning.length > 250 ? '...' : '') + '</div>';
+      if (d.outcome_pnl !== null && d.outcome_pnl !== undefined) {
+        html += '<div style="margin-top:6px;font-size:11px;"><b>Outcome:</b> <span style="color:' + pnlColor + '">$' + Number(d.outcome_pnl).toFixed(2) + '</span> <span style="color:var(--text-muted);">(' + (d.outcome_label || '') + ')</span></div>';
+      }
+      if (d.status === 'pending') {
+        html += '<div style="margin-top:8px;display:flex;gap:6px;"><button onclick="approveAIDecision(' + d.id + ')" style="background:var(--green);color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;">APPROVE</button><button onclick="rejectAIDecision(' + d.id + ')" style="background:var(--red);color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;">REJECT</button></div>';
+      }
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function approveAIDecision(id) {
+  const reason = prompt('Approve as (ai_model name):', 'claude-opus-4-6');
+  if (!reason) return;
+  try {
+    const r = await fetch('/api/agent/approve/' + id, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({approved_by: reason})});
+    const d = await r.json();
+    if (d.status === 'executed') {
+      alert('Trade executed: ' + d.ticker + ' ' + d.side + ' x' + d.qty);
+    } else {
+      alert('Result: ' + JSON.stringify(d));
+    }
+    loadAIDecisions();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function rejectAIDecision(id) {
+  const reason = prompt('Rejection reason:', 'manual rejection');
+  if (!reason) return;
+  try {
+    await fetch('/api/agent/reject/' + id, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rejected_by:'user', reason: reason})});
+    loadAIDecisions();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function loadTrainingData() {
+  const el = document.getElementById('trainingResult');
+  el.innerHTML = 'Yukleniyor...';
+  try {
+    const r = await fetch('/api/training/export?limit=100').then(r => r.json());
+    if (r.error) { el.innerHTML = '<span style="color:var(--red)">' + r.error + '</span>'; return; }
+    let html = '<div style="margin-bottom:8px;color:var(--text-muted);">N samples: <b>' + r.n_samples + '</b></div>';
+    if (r.n_samples === 0) {
+      html += '<div style="padding:16px;color:var(--text-muted);">Henuz outcome\'u kaydedilmis karar yok.</div>';
+    } else {
+      html += '<div style="max-height:400px;overflow-y:auto;background:var(--bg-secondary);padding:10px;border-radius:6px;">';
+      for (const s of r.samples.slice(0, 5)) {
+        html += '<pre style="margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;white-space:pre-wrap;word-break:break-word;">' + JSON.stringify(s, null, 2).slice(0, 1000) + '</pre>';
+      }
+      if (r.samples.length > 5) html += '<div style="color:var(--text-muted);">... ' + (r.samples.length - 5) + ' more</div>';
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = '<span style="color:var(--red)">ERROR: ' + e.message + '</span>'; }
+}
+
+async function downloadTrainingJSONL() {
+  try {
+    const r = await fetch('/api/training/export?limit=10000').then(r => r.json());
+    if (!r.samples || !r.samples.length) { alert('No training data yet.'); return; }
+    const jsonl = r.samples.map(s => JSON.stringify(s)).join('\n');
+    const blob = new Blob([jsonl], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'simons_training_' + Date.now() + '.jsonl';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function loadDiagnostics() {
