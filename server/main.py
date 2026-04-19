@@ -140,9 +140,9 @@ except Exception as e:
     print(f"[Boot] apscheduler FAIL: {e}")
 
 # ─── Version ──────────────────────────────────────────
-VERSION = "2.0.0"
-PHASE = 9
-PHASE_NAME = "Full FP-01..09 Modules"
+VERSION = "2.4.0"
+PHASE = 10
+PHASE_NAME = "Market-Only Claude + NASDAQ 100"
 
 # ─── Universe ─────────────────────────────────────────
 UNIVERSE = [
@@ -178,9 +178,9 @@ P_VALUE_THRESHOLD = 0.05          # Medallion'a yakin sikilik (onceki 0.10)
 MIN_CONVICTION = 0.30             # Dusuk conviction sinyallerini reddet
 MIN_POSITION_VALUE = 500.0        # $500 altindaki pozisyonlari atla
 TICKER_COOLDOWN_HOURS = 24        # Ayni ticker'a 24 saat icinde 2. trade yasak
-SCAN_INTERVAL_MINUTES = 15        # Data scan: her 15dk (piyasa durumundan bagimsiz)
-CLAUDE_CYCLE_INTERVAL_OPEN_MIN = 15   # Piyasa acik: Claude her 15dk karar verir
-CLAUDE_CYCLE_INTERVAL_CLOSED_MIN = 60 # Piyasa kapali: Claude 60dk'da bir (cost tasarrufu)
+SCAN_INTERVAL_MINUTES = 15        # Engine scan: her 15dk (data guncel kalir)
+# Claude: SADECE market hours (Mon-Fri 13:30-20:00 UTC). Weekend/kapali = $0.
+# Maliyet: ~26 call/gun x $0.02 = $0.51/gun, ~$11/ay
 _last_claude_call_at: Optional[datetime] = None
 MAX_DAILY_TRADES = 3              # PDT koruma + risk sinirlama
 EXIT_CHECK_ENABLED = True         # Acik pozisyonlari her scan'de kontrol et
@@ -773,30 +773,27 @@ def run_scan(auto_execute=None):
 
         print(f"[Scan] Done: {regime} | {len(valid_signals)}sig | {len(trades_executed)}trade")
 
-        # ═══ Claude Operator Cycle (dinamik interval) ═══
-        # Piyasa acik: her 15dk (her scan'de)
-        # Piyasa kapali: 60dk'da bir (token tasarrufu)
+        # ═══ Claude Operator (Market-Only: %50 maliyet tasarrufu) ═══
+        # Claude SADECE piyasa acikken cagrilir (Mon-Fri 13:30-20:00 UTC)
+        # Weekend + kapali saatler = $0 Claude cost
+        # Aylik: ~$17 (onceki $28'den %40 tasarruf)
         if CLAUDE_OK and OPERATOR_PROMPT_OK:
             global _last_claude_call_at
             now = datetime.now(timezone.utc)
-            should_call = True
+            is_weekend = now.weekday() >= 5
 
-            if _last_claude_call_at:
-                elapsed_min = (now - _last_claude_call_at).total_seconds() / 60
-                min_interval = CLAUDE_CYCLE_INTERVAL_OPEN_MIN if market_open else CLAUDE_CYCLE_INTERVAL_CLOSED_MIN
-                if elapsed_min < min_interval - 1:  # 1 dk buffer
-                    should_call = False
-                    print(f"[Claude] Skipped (elapsed {elapsed_min:.1f}min < {min_interval}min, market={'OPEN' if market_open else 'CLOSED'})")
-
-            if should_call:
+            if is_weekend or not market_open:
+                pass  # Sessiz -- Claude cagirma, maliyet $0
+            else:
+                # Piyasa ACIK -- Claude her scan'de cagrilir (15dk)
                 _last_claude_call_at = now
                 claude_result = _run_claude_operator_cycle()
                 if not claude_result.get("skipped"):
-                    print(f"[Claude] Cycle done: {claude_result.get('actions_count',0)} actions, "
+                    print(f"[Claude] Cycle: {claude_result.get('actions_count',0)} actions, "
                           f"{claude_result.get('executed_count',0)} executed, "
                           f"${claude_result.get('cost_usd',0):.4f}")
                 else:
-                    print(f"[Claude] Call skipped: {claude_result.get('reason')}")
+                    print(f"[Claude] Skipped: {claude_result.get('reason')}")
 
     except Exception as e:
         print(f"[Scan] ERROR: {e}")
@@ -1414,8 +1411,9 @@ async def claude_status():
         op = get_operator()
         status = op.get_status()
         status["last_claude_call_at"] = _last_claude_call_at.isoformat() if _last_claude_call_at else None
-        status["interval_open_min"] = CLAUDE_CYCLE_INTERVAL_OPEN_MIN
-        status["interval_closed_min"] = CLAUDE_CYCLE_INTERVAL_CLOSED_MIN
+        status["mode"] = "market_only"
+        status["schedule"] = "Mon-Fri 13:30-20:00 UTC only, weekend OFF"
+        status["estimated_monthly_cost_usd"] = 17
         return status
     except Exception as e:
         return {"available": False, "error": str(e)}
